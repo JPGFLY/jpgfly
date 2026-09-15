@@ -45,13 +45,7 @@ The hosted project may use private model infrastructure, but that infrastructure
 EvkMVctzE6VP82KvPzSwrtpLkcygwyhvUHnVZZAtTDZG
 ```
 
-### JPGFLY token
-
-```
-0xE34d22a71D59569740B8e9781CfD0469Cd26030C
-```
-
-The wallet and token addresses are public project identifiers. Private keys, signing authority, custody, and deployment secrets remain outside the open-source repository.
+The agent wallet is a public project identifier. Private keys, signing authority, custody, and deployment secrets remain outside the open-source repository.
 
 ## Open-source boundary
 
