@@ -25,7 +25,7 @@ class JPGFLYAppTests(unittest.TestCase):
         jpgfly.SESSIONS.clear();jpgfly.ARTWORKS.clear();os.environ.pop("JPGFLY_DATA_DIR",None);self.data_dir.cleanup()
 
     def test_project_config_is_backrooms(self):
-        config=jpgfly.public_config();self.assertEqual(config["project"],"JPGFLY");self.assertEqual(config["mode"],"BACKROOMS");self.assertEqual(config["archiveMode"],"image+text");self.assertFalse(config["replayStorage"]);self.assertFalse(config["videoStorage"]);self.assertEqual(config["timeStandard"],"UTC")
+        config=jpgfly.public_config();self.assertEqual(config["project"],"JPGFLY");self.assertEqual(config["mode"],"BACKROOMS");self.assertEqual(config["archiveMode"],"image+text");self.assertFalse(config["replayStorage"]);self.assertFalse(config["videoStorage"]);self.assertEqual(config["timeStandard"],"UTC");self.assertEqual(config["agentWallet"],"EvkMVctzE6VP82KvPzSwrtpLkcygwyhvUHnVZZAtTDZG");self.assertEqual(config["tokenAddress"],"0xE34d22a71D59569740B8e9781CfD0469Cd26030C")
 
     def test_room_numbers_are_atomic_and_monotonic(self):
         self.assertEqual(jpgfly.next_room_number(),1);self.assertEqual(jpgfly.next_room_number(),2);self.assertEqual(jpgfly.next_room_number(),3)
