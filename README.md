@@ -42,7 +42,7 @@ The hosted project may use private model infrastructure, but that infrastructure
 ### Agent wallet
 
 ```
-EvkMVctzE6VP82KvPzSwrtpLkcygwyhvUHnVZZAtTDZG
+0x977d02F5519be02Cc3B8905e1D39f916DC4A3e9D
 ```
 
 ### JPGFLY token
