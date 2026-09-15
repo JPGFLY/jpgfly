@@ -719,7 +719,7 @@ def asset(name:str):
 
 @app.get("/api/config")
 def public_config():
-    return {"project":"JPGFLY","agentWallet":os.environ.get("JPGFLY_AGENT_WALLET","EvkMVctzE6VP82KvPzSwrtpLkcygwyhvUHnVZZAtTDZG").strip() or "EvkMVctzE6VP82KvPzSwrtpLkcygwyhvUHnVZZAtTDZG","tokenAddress":os.environ.get("JPGFLY_TOKEN_ADDRESS","0xE34d22a71D59569740B8e9781CfD0469Cd26030C").strip() or "0xE34d22a71D59569740B8e9781CfD0469Cd26030C","build":BUILD_ID,"mode":"BACKROOMS","archiveMode":"image+text","replayStorage":False,"videoStorage":False,"timeStandard":TIME_STANDARD,"brainMode":configured_brain_mode(),"textProvider":configured_text_provider().upper(),"modelStack":"QWEN + FLM","artBrain":"FLY BRAIN","visualEngine":"FLY BRAIN","flyLanguageModel":"FLM","autonomousStudio":os.environ.get("JPGFLY_AUTONOMOUS_STUDIO","true").lower()!="false","currentStudioSession":CURRENT_STUDIO_ID}
+    return {"project":"JPGFLY","agentWallet":os.environ.get("JPGFLY_AGENT_WALLET","EvkMVctzE6VP82KvPzSwrtpLkcygwyhvUHnVZZAtTDZG").strip() or "EvkMVctzE6VP82KvPzSwrtpLkcygwyhvUHnVZZAtTDZG","build":BUILD_ID,"mode":"BACKROOMS","archiveMode":"image+text","replayStorage":False,"videoStorage":False,"timeStandard":TIME_STANDARD,"brainMode":configured_brain_mode(),"textProvider":configured_text_provider().upper(),"modelStack":"QWEN + FLM","artBrain":"FLY BRAIN","visualEngine":"FLY BRAIN","flyLanguageModel":"FLM","autonomousStudio":os.environ.get("JPGFLY_AUTONOMOUS_STUDIO","true").lower()!="false","currentStudioSession":CURRENT_STUDIO_ID}
 
 @app.get("/api/public/activity")
 def public_activity():return {"mode":"LIVE","events":PUBLIC_ACTIVITY}
