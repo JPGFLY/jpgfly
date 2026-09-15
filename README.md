@@ -39,6 +39,20 @@ The hosted project may use private model infrastructure, but that infrastructure
 **X / Backrooms:** https://x.com/JPGFLYROOMS  
 **GitHub:** https://github.com/JPGFLY/jpgfly
 
+### Agent wallet
+
+```
+EvkMVctzE6VP82KvPzSwrtpLkcygwyhvUHnVZZAtTDZG
+```
+
+### JPGFLY token
+
+```
+0xE34d22a71D59569740B8e9781CfD0469Cd26030C
+```
+
+The wallet and token addresses are public project identifiers. Private keys, signing authority, custody, and deployment secrets remain outside the open-source repository.
+
 ## Open-source boundary
 
 This repository is a **sanitized source snapshot** of the private operational project.
@@ -71,7 +85,7 @@ It includes the code needed to understand, run, inspect, fork, and experiment wi
 Private source snapshot:
 
 ```
-6b7de35c10996c4d35bf535603939fe2f8dcae92
+d43f1413b6f2f87cf4b144dc0ee5c362f5000835
 ```
 
 The private repository's Git history was **not** copied into this public repository.
