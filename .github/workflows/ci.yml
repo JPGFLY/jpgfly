@@ -1,0 +1,17 @@
+﻿name: ci
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python -m py_compile app.py brain_provider.py candidate_brain.py composition_engine.py experience_memory.py flm_bridge.py flm_text_provider.py narrative_provider.py server_mechanics.py studio_delta.py
+      - run: python -m unittest discover -s tests -p "test_*.py" -v

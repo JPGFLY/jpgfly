@@ -1,0 +1,37 @@
+import unittest
+
+from app import DecisionRequest, SESSIONS, StartRequest, create_session, session_decision
+
+
+class _FailingBrain:
+    mode = "BROKEN TEST BRAIN"
+
+    def decide(self, request, limits):
+        raise RuntimeError("simulated art-brain failure")
+
+
+class DumbDumbFallbackTests(unittest.IsolatedAsyncioTestCase):
+    async def test_decision_failure_switches_to_pure_python_fallback(self):
+        created = await create_session(
+            StartRequest(seed=12345, complexity=0.8, mutation=0.4, density=0.6)
+        )
+        session_id = created["session_id"]
+        try:
+            session = SESSIONS[session_id]
+            session["_brain"] = _FailingBrain()
+
+            result = await session_decision(session_id, DecisionRequest(sequence=0))
+
+            self.assertIn("DUMB DUMB MODE", result["brainMode"])
+            self.assertEqual(
+                SESSIONS[session_id]["brain_mode"],
+                "DUMB DUMB MODE · PURE PYTHON FALLBACK",
+            )
+            self.assertEqual(result["sequence"], 0)
+            self.assertIn(result["action"]["intent"], {"MOVE", "FINISH_ARTWORK"})
+        finally:
+            SESSIONS.pop(session_id, None)
+
+
+if __name__ == "__main__":
+    unittest.main()

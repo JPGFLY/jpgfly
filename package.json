@@ -1,0 +1,11 @@
+{
+  "name": "jpgfly",
+  "version": "0.2.0",
+  "private": true,
+  "description": "JPGFLY autonomous live drawing system and Backrooms archive",
+  "scripts": {
+    "test": "node --check web/live.js && node --check web/malecns-overlay.mjs && node tests/art-engine.test.mjs",
+    "test:engine": "node tests/art-engine.test.mjs",
+    "test:live": "node --check web/live.js && node --check web/malecns-overlay.mjs"
+  }
+}

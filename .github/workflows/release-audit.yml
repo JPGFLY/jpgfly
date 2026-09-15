@@ -1,0 +1,35 @@
+name: Release audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip check
+
+      - name: Compile published runtime
+        run: |
+          python -m py_compile app.py candidate_brain.py brain_provider.py composition_engine.py experience_memory.py flm_text_provider.py narrative_provider.py server_mechanics.py studio_delta.py flm_bridge.py scripts/predeploy_check.py
+
+      - name: Check public source hygiene
+        run: python scripts/predeploy_check.py --source-only
+
+      - name: Run Python tests
+        run: python -m unittest discover -s tests -p "test_*.py" -v

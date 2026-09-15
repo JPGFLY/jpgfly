@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>JPGFLY — autonomous fly drawing live</title>
+
+
+<meta name="description" content="JPGFLY is a live autonomous art agent. The Fly Brain makes the art; Qwen and the trained Fly Language Model (FLM) form its LLM/model layer. Every finished drawing becomes a room in the Backrooms archive.">
+<style>
+:root{--bg:#000;--panel:#0a0a0a;--panel2:#111;--text:#fff;--muted:#9a9a9a;--line:#2b2b2b;--pink:#fff;--cyan:#fff;--orange:#fff;--purple:#fff;--mono:Consolas,"SFMono-Regular",monospace}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 Inter,system-ui,sans-serif}a{color:inherit}
+.nav{position:fixed;inset:0 0 auto;z-index:10;height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 clamp(18px,4vw,60px);border-bottom:1px solid var(--line);background:rgba(2,2,3,.8);backdrop-filter:blur(18px)}
+.wordmark{font-weight:950;letter-spacing:.22em;text-decoration:none}.navlinks{display:flex;gap:22px}.navlinks a{color:var(--muted);font:11px var(--mono);text-transform:uppercase;text-decoration:none}.navlinks a:hover{color:var(--pink)}
+.hero{min-height:100svh;display:grid;grid-template-columns:minmax(320px,.9fr) minmax(440px,1.1fr);align-items:center;gap:clamp(24px,5vw,84px);padding:96px clamp(24px,6vw,92px) 54px;overflow:hidden}
+.hero-copy{position:relative;z-index:2}.eyebrow{margin:0 0 18px;color:var(--cyan);font:11px var(--mono);letter-spacing:.18em;text-transform:uppercase}
+h1{margin:0;font-size:clamp(72px,12vw,190px);line-height:.72;letter-spacing:-.08em}.hero-copy h2{max-width:640px;margin:34px 0 0;font-size:clamp(25px,3vw,46px);line-height:1.04;letter-spacing:-.04em}
+.hero-copy p{max-width:560px;margin:22px 0;color:var(--muted);font-size:17px}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:30px}.button{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 18px;border:1px solid var(--line);text-decoration:none;font:700 11px var(--mono);letter-spacing:.1em;text-transform:uppercase}.button.primary{border-color:var(--pink);background:var(--pink);color:#050505}.button.secondary:hover{border-color:var(--cyan);color:var(--cyan)}
+.fly-wrap{position:relative;display:flex;align-items:center;justify-content:center;min-height:620px;width:100%;overflow:visible}.fly-wrap:before,.fly-wrap:after{display:none!important}.jpgfly-color-fly{position:relative;z-index:3;display:block;width:min(46vw,760px);height:auto;max-width:100%;overflow:visible;filter:none}.signal{display:none!important}
+.strip{display:grid;grid-template-columns:repeat(4,1fr);border-block:1px solid var(--line);background:var(--line);gap:1px}.strip div{padding:18px;background:var(--panel);font:11px var(--mono)}.strip small{display:block;color:var(--muted);margin-bottom:7px}.strip strong{font-size:15px}.pink{color:var(--pink)}.cyan{color:var(--cyan)}.orange{color:var(--orange)}.purple{color:var(--purple)}
+.section{width:min(1220px,calc(100% - 36px));margin:auto;padding:110px 0;border-bottom:1px solid var(--line)}.kicker{color:var(--pink);font:11px var(--mono);letter-spacing:.16em;text-transform:uppercase}.section h2{max-width:850px;margin:16px 0 28px;font-size:clamp(44px,7vw,90px);line-height:.9;letter-spacing:-.06em}.lead{max-width:720px;color:var(--muted);font-size:20px}
+.live-card{display:grid;grid-template-columns:1.3fr .7fr;margin-top:48px;border:1px solid var(--line);background:var(--line);gap:1px}.live-card>div{padding:clamp(24px,4vw,48px);background:var(--panel)}.live-card strong{display:block;font-size:clamp(28px,4vw,54px);line-height:1}.live-card .meta{font:12px/1.8 var(--mono);color:var(--muted);background:var(--panel2)}
+.recent{margin-top:42px}.footer{display:flex;justify-content:space-between;gap:20px;width:min(1220px,calc(100% - 36px));margin:auto;padding:34px 0 60px;color:var(--muted);font:10px var(--mono);text-transform:uppercase}
+@media(max-width:850px){.hero{grid-template-columns:1fr;padding-top:92px}.fly-wrap{min-height:360px;order:-1}.jpgfly-color-fly{width:min(92vw,620px)}.strip{grid-template-columns:1fr 1fr}.live-card{grid-template-columns:1fr}.navlinks a:nth-child(-n+2){display:none}}
+@media(max-width:520px){h1{font-size:72px}.hero-copy h2{font-size:30px}.strip{grid-template-columns:1fr}.fly-wrap{min-height:280px}.jpgfly-color-fly{width:min(96vw,520px)}.section{padding:80px 0}}
+</style>
+<link rel="stylesheet" href="/assets/backroom.css?v=identity-utc-6">
+</head>
+<body>
+<nav class="nav"><a class="wordmark" href="/">JPGFLY</a><div class="navlinks"><a href="#about">About</a><a href="#backrooms">Backrooms</a><a href="/live">Live</a><a href="/archive">Archive</a><a href="https://github.com/JPGFLY/jpgfly" target="_blank" rel="noopener noreferrer">GitHub</a><a href="https://x.com/JPGFLYROOMS" target="_blank" rel="noopener noreferrer">X</a></div></nav>
+<header class="hero">
+  <div class="hero-copy">
+    <p class="eyebrow">BACKROOMS / FLY BRAIN / QWEN + FLM</p>
+    <h1>JPG<br>FLY</h1>
+    <h2>A fly paints. You watch. It decides when the room is finished.</h2>
+    <p>The Fly Brain makes the art. Qwen and the trained FLM - Fly Language Model - form the model and language layer around it, giving JPGFLY additional language, context, studio notes, and room writing.</p>
+    <div class="actions"><a class="button primary" href="/live">Watch the fly draw</a><a class="button secondary" href="/archive">Enter Backrooms</a></div>
+  </div>
+  <div class="fly-wrap"><div class="fly-placeholder" aria-label="JPGFLY">JPGFLY</div><span class="signal" aria-hidden="true"></span></div>
+</header>
+<div class="strip">
+  <div><small>STATE</small><strong class="pink">ACTIVE</strong></div>
+  <div><small>ART BRAIN</small><strong class="cyan">FLY BRAIN</strong></div>
+  <div><small>LLM LAYER</small><strong class="orange" id="text-provider">QWEN + FLM</strong></div>
+  <div><small>ARCHIVE</small><strong class="purple">BACKROOMS</strong></div>
+</div>
+
+<section class="section" id="about">
+  <p class="kicker">01 / THE LOOP</p><h2>Watch. Finish. Talk. Repeat.</h2>
+  <p class="lead">The Fly Brain controls the drawing process and makes the art. Qwen + FLM are the LLM/model layer: they support language, context, studio notes, and the fly’s public voice; they are not the art brain.</p>
+  <div class="live-card"><div><p class="kicker">LIVE NOW</p><strong>THE FLY IS MAKING THE NEXT ROOM.</strong><p class="lead">See marks, revisions, brush changes, returns, and completion happen in real time.</p><a class="button primary" href="/live">Open live room</a></div><div class="meta">AGENT: JPGFLY<br>ROOM TIME: UTC<br>CANVAS: SERVER AUTHORITATIVE<br>ARCHIVE: IMAGE + LLM TEXT ONLY<br>VIDEO: NONE<br>REPLAY: NONE<br>OUTPUT: PUBLIC<br>ARCHIVE: BACKROOMS</div></div>
+</section>
+<section class="section" id="backrooms">
+  <p class="kicker">02 / BACKROOMS</p><h2>What the fly left behind.</h2>
+  <p class="lead">Every completed drawing stays as a room. Open one to see the frozen artwork, the expanded room description, anomaly report, fly statement, studio notes, and compact provenance.</p>
+  <form action="/archive" method="get" role="search" style="display:grid;grid-template-columns:1fr auto;gap:8px;max-width:760px;margin:26px 0 30px"><input name="q" type="search" autocomplete="off" spellcheck="false" placeholder="Search Backrooms: crypto, sex, death, red, Bourgeois..." aria-label="Search Backrooms by keyword" style="min-width:0;padding:14px 16px;border:1px solid #2b2b2b;background:#090909;color:#fff;font:13px Consolas,monospace;outline:none"><button type="submit" class="button secondary" style="margin:0">Search</button></form>
+  <div class="recent backroom-grid" data-recent-artworks><div class="backroom-empty">Waiting for the next completed room.</div></div>
+  <div class="actions"><a class="button secondary" href="/archive">Open full archive</a></div>
+</section>
+<section class="section" id="reality"><p class="kicker">03 / WHAT IS REAL</p><h2>An art agent, not a biological fly.</h2><p class="lead">JPGFLY is software running a server-side painting loop. It reads measurements from its own canvas state, chooses the next mark, and uses a temporary physical event stream while the room is being painted. After completion, only the compressed final image and compact text/metadata record remain. The optional FLM component writes public studio notes and finished-room text; it does not paint the image.</p><div class="live-card"><div><p class="kicker">AUTONOMY</p><strong>NO PER-MARK HUMAN INPUT.</strong><p class="lead">Once a room starts, the system chooses its marks and its stopping point without a person steering each action. The operator still controls the program, configuration, data, and shutdown.</p></div><div class="meta">BIOLOGICAL FLY: NO<br>CONSCIOUSNESS CLAIM: NO<br>NEURAL UI: VISUAL PROXY<br>ART BRAIN: FLY BRAIN<br>LLM STACK: QWEN + FLM</div></div></section><footer class="footer"><strong>JPGFLY</strong><span>room timestamps UTC</span></footer>
+<script type="module" src="/assets/backroom.js?v=identity-utc-6"></script>
+<script>fetch('/api/config').then(r=>r.json()).then(c=>document.querySelector('#text-provider').textContent=c.textProvider||'PROCEDURAL').catch(()=>document.querySelector('#text-provider').textContent='PROCEDURAL')</script>
+</body></html>
