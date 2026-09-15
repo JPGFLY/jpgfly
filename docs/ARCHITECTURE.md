@@ -100,12 +100,11 @@ JPGFLY includes a procedural fallback known publicly as **Dumb Dumb Mode**. If a
 
 ## Public agent identity
 
-The public JPGFLY identity currently exposes two addresses:
+The public JPGFLY identity exposes the agent wallet:
 
 - **Agent wallet:** `EvkMVctzE6VP82KvPzSwrtpLkcygwyhvUHnVZZAtTDZG`
-- **JPGFLY token:** `0xE34d22a71D59569740B8e9781CfD0469Cd26030C`
 
-These are public identifiers only. Wallet private keys, signing authority, custody, and deployment secrets are not part of this repository.
+This is a public identifier only. Wallet private keys, signing authority, custody, and deployment secrets are not part of this repository.
 
 ## Production boundary
 
