@@ -23,6 +23,8 @@ SESSIONS:dict[str,dict[str,Any]]={}
 ARTWORKS:dict[str,dict[str,Any]]={}
 ROOM_LOCK=threading.Lock(); FINALIZE_LOCK=threading.Lock(); NEXT_ROOM_NUMBER=1
 CURRENT_STUDIO_ID:str|None=None
+MALECNS_PUBLIC_STATE={"value":None,"fresh_until":0.0,"retry_after":0.0,"log_after":0.0,"lock":threading.Lock()}
+MALECNS_PUBLIC_NETWORK={"value":None,"fresh_until":0.0,"retry_after":0.0,"log_after":0.0,"lock":threading.Lock()}
 STUDIO_PROGRESS_AT=time.monotonic()
 STUDIO_PROGRESS_WALL=datetime.now(timezone.utc).isoformat()
 MAX_ACTIVE_SESSIONS=128; SESSION_TTL_SECONDS=21600; MAX_REQUEST_BYTES=8*1024*1024
@@ -724,101 +726,137 @@ def public_config():
 @app.get("/api/public/activity")
 def public_activity():return {"mode":"LIVE","events":PUBLIC_ACTIVITY}
 
-@app.get("/api/studio/malecns")
-def public_malecns_state():
+def _malecns_endpoint():
     enabled=os.environ.get("JPGFLY_MALECNS_ENABLED","").strip().lower() in {"1","true","yes","on"} or bool(os.environ.get("JPGFLY_MALECNS_URL","").strip())
-    if not enabled:
-        return {"ok":False,"enabled":False,"dataset":"MaleCNS v1.0","top_active":[]}
     configured=os.environ.get("JPGFLY_MALECNS_URL","").strip().rstrip("/")
     ollama=os.environ.get("JPGFLY_OLLAMA_URL","").strip().rstrip("/")
     url=configured or (ollama[:-7]+"/malecns" if ollama.endswith("/ollama") else "http://127.0.0.1:4690")
     headers={}
     token=os.environ.get("JPGFLY_CONTROL_TOKEN","").strip() or os.environ.get("JPGFLY_OLLAMA_AUTH_TOKEN","").strip()
     if token:headers["authorization"]="Bearer "+token
-    try:
-        request=urllib.request.Request(url+"/state",headers=headers)
-        with urllib.request.urlopen(request,timeout=4) as response:
-            state=json.load(response)
-        bias=state.get("bias") if isinstance(state.get("bias"),dict) else {}
-        top=[]
-        for item in (state.get("top_active") or [])[:96]:
-            if not isinstance(item,dict):continue
-            clean={
-                "body_id":str(item.get("body_id") or ""),
-                "index":int(item.get("index",0) or 0),
-                "spikes":int(item.get("spikes",0) or 0),
-            }
-            for key in ("u","v"):
-                try:
-                    value=float(item.get(key))
-                    if math.isfinite(value):clean[key]=value
-                except (TypeError,ValueError):
-                    pass
-            if item.get("superclass") is not None:
-                clean["superclass"]=str(item.get("superclass"))[:80]
-            top.append(clean)
-        return {
-            "ok":True,
-            "enabled":True,
-            "dataset":"MaleCNS v1.0",
-            "neurons":int(state.get("neurons",166700) or 166700),
-            "directed_edges":int(state.get("directed_edges",25582938) or 25582938),
-            "bias":bias,
-            "top_active":top,
-            "spatial_activity":any("u" in item and "v" in item for item in top),
-        }
-    except Exception as exc:
-        LOGGER.warning("MaleCNS public telemetry unavailable: %s: %s",type(exc).__name__,str(exc)[:180])
-        return {"ok":False,"enabled":True,"dataset":"MaleCNS v1.0","top_active":[]}
+    return enabled,url,headers
 
+def _cached_malecns(slot,label,path,timeout,fresh_for,retry_for,transform,empty):
+    enabled,url,headers=_malecns_endpoint()
+    if not enabled:return {**empty,"enabled":False}
+    now=time.monotonic()
+    cached=slot.get("value")
+    if cached is not None and now<float(slot.get("fresh_until",0.0)):return cached
+    if now<float(slot.get("retry_after",0.0)):
+        return {**cached,"stale":True} if cached is not None else {**empty,"enabled":True}
+    lock=slot["lock"]
+    if not lock.acquire(blocking=False):
+        return {**cached,"stale":True} if cached is not None else {**empty,"enabled":True}
+    try:
+        now=time.monotonic()
+        cached=slot.get("value")
+        if cached is not None and now<float(slot.get("fresh_until",0.0)):return cached
+        if now<float(slot.get("retry_after",0.0)):
+            return {**cached,"stale":True} if cached is not None else {**empty,"enabled":True}
+        request=urllib.request.Request(url+path,headers=headers)
+        with urllib.request.urlopen(request,timeout=timeout) as response:
+            state=json.load(response)
+        value=transform(state)
+        slot["value"]=value
+        slot["fresh_until"]=time.monotonic()+fresh_for
+        slot["retry_after"]=0.0
+        return value
+    except Exception as exc:
+        now=time.monotonic()
+        slot["retry_after"]=now+retry_for
+        if now>=float(slot.get("log_after",0.0)):
+            LOGGER.warning("%s unavailable: %s: %s",label,type(exc).__name__,str(exc)[:180])
+            slot["log_after"]=now+retry_for
+        return {**cached,"stale":True} if cached is not None else {**empty,"enabled":True}
+    finally:
+        lock.release()
+
+def _public_malecns_state_payload(state):
+    bias=state.get("bias") if isinstance(state.get("bias"),dict) else {}
+    top=[]
+    for item in (state.get("top_active") or [])[:96]:
+        if not isinstance(item,dict):continue
+        clean={
+            "body_id":str(item.get("body_id") or ""),
+            "index":int(item.get("index",0) or 0),
+            "spikes":int(item.get("spikes",0) or 0),
+        }
+        for key in ("u","v"):
+            try:
+                value=float(item.get(key))
+                if math.isfinite(value):clean[key]=value
+            except (TypeError,ValueError):
+                pass
+        if item.get("superclass") is not None:
+            clean["superclass"]=str(item.get("superclass"))[:80]
+        top.append(clean)
+    return {
+        "ok":True,
+        "enabled":True,
+        "dataset":"MaleCNS v1.0",
+        "neurons":int(state.get("neurons",166700) or 166700),
+        "directed_edges":int(state.get("directed_edges",25582938) or 25582938),
+        "bias":bias,
+        "top_active":top,
+        "spatial_activity":any("u" in item and "v" in item for item in top),
+    }
+
+def _public_malecns_network_payload(state):
+    nodes=[]
+    for item in (state.get("nodes") or [])[:420]:
+        if not isinstance(item,dict):continue
+        nodes.append({
+            "body_id":str(item.get("body_id") or ""),
+            "spikes":int(item.get("spikes",0) or 0),
+            "active":bool(item.get("active")),
+            "superclass":str(item.get("superclass") or "")[:80],
+        })
+    valid={item["body_id"] for item in nodes if item["body_id"]}
+    edges=[]
+    for item in (state.get("edges") or [])[:2400]:
+        if not isinstance(item,dict):continue
+        source=str(item.get("source") or "");target=str(item.get("target") or "")
+        if source not in valid or target not in valid:continue
+        try:weight=float(item.get("weight",0) or 0)
+        except (TypeError,ValueError):weight=0.0
+        edges.append({"source":source,"target":target,"weight":weight})
+    return {
+        "ok":True,
+        "enabled":True,
+        "dataset":"MaleCNS v1.0",
+        "neurons":int(state.get("neurons",166700) or 166700),
+        "directed_edges":int(state.get("directed_edges",25582938) or 25582938),
+        "telemetry_schema":str(state.get("telemetry_schema") or ""),
+        "nodes":nodes,
+        "edges":edges,
+        "important_note":"Live node/edge identities and spike counts are real MaleCNS simulation telemetry. Layout is topology-derived, not anatomical coordinates.",
+    }
+
+@app.get("/api/studio/malecns")
+def public_malecns_state():
+    return _cached_malecns(
+        MALECNS_PUBLIC_STATE,
+        "MaleCNS public telemetry",
+        "/state",
+        1.25,
+        .75,
+        15.0,
+        _public_malecns_state_payload,
+        {"ok":False,"enabled":True,"dataset":"MaleCNS v1.0","top_active":[]},
+    )
 
 @app.get("/api/studio/malecns/network")
 def public_malecns_network():
-    enabled=os.environ.get("JPGFLY_MALECNS_ENABLED","").strip().lower() in {"1","true","yes","on"} or bool(os.environ.get("JPGFLY_MALECNS_URL","").strip())
-    if not enabled:
-        return {"ok":False,"enabled":False,"dataset":"MaleCNS v1.0","nodes":[],"edges":[]}
-    configured=os.environ.get("JPGFLY_MALECNS_URL","").strip().rstrip("/")
-    ollama=os.environ.get("JPGFLY_OLLAMA_URL","").strip().rstrip("/")
-    url=configured or (ollama[:-7]+"/malecns" if ollama.endswith("/ollama") else "http://127.0.0.1:4690")
-    headers={}
-    token=os.environ.get("JPGFLY_CONTROL_TOKEN","").strip() or os.environ.get("JPGFLY_OLLAMA_AUTH_TOKEN","").strip()
-    if token:headers["authorization"]="Bearer "+token
-    try:
-        request=urllib.request.Request(url+"/network",headers=headers)
-        with urllib.request.urlopen(request,timeout=5) as response:
-            state=json.load(response)
-        nodes=[]
-        for item in (state.get("nodes") or [])[:420]:
-            if not isinstance(item,dict):continue
-            nodes.append({
-                "body_id":str(item.get("body_id") or ""),
-                "spikes":int(item.get("spikes",0) or 0),
-                "active":bool(item.get("active")),
-                "superclass":str(item.get("superclass") or "")[:80],
-            })
-        valid={item["body_id"] for item in nodes if item["body_id"]}
-        edges=[]
-        for item in (state.get("edges") or [])[:2400]:
-            if not isinstance(item,dict):continue
-            source=str(item.get("source") or "");target=str(item.get("target") or "")
-            if source not in valid or target not in valid:continue
-            try:weight=float(item.get("weight",0) or 0)
-            except (TypeError,ValueError):weight=0.0
-            edges.append({"source":source,"target":target,"weight":weight})
-        return {
-            "ok":True,
-            "enabled":True,
-            "dataset":"MaleCNS v1.0",
-            "neurons":int(state.get("neurons",166700) or 166700),
-            "directed_edges":int(state.get("directed_edges",25582938) or 25582938),
-            "telemetry_schema":str(state.get("telemetry_schema") or ""),
-            "nodes":nodes,
-            "edges":edges,
-            "important_note":"Live node/edge identities and spike counts are real MaleCNS simulation telemetry. Layout is topology-derived, not anatomical coordinates.",
-        }
-    except Exception as exc:
-        LOGGER.warning("MaleCNS public network unavailable: %s: %s",type(exc).__name__,str(exc)[:180])
-        return {"ok":False,"enabled":True,"dataset":"MaleCNS v1.0","nodes":[],"edges":[]}
+    return _cached_malecns(
+        MALECNS_PUBLIC_NETWORK,
+        "MaleCNS public network",
+        "/network",
+        1.5,
+        20.0,
+        30.0,
+        _public_malecns_network_payload,
+        {"ok":False,"enabled":True,"dataset":"MaleCNS v1.0","nodes":[],"edges":[]},
+    )
 
 
 @app.get("/api/version")

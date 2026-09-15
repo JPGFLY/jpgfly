@@ -27,6 +27,8 @@ let eventCursor=0;
 let pollBusy=false;
 let comparisonKey='';
 let lastCompletedSession='';
+let maleCNSPollBusy=false;
+let maleCNSNetworkBusy=false;
 
 const VISUAL_SPEED=1.0;
 
@@ -466,22 +468,36 @@ async function pollStudio(){
   }
 }
 
-async function loadMaleCNSNetwork(){
+async function fetchJSONWithTimeout(url,timeoutMs){
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
-    const response=await fetch('/api/studio/malecns/network',{cache:'no-store'});
-    if(!response.ok)return;
-    const data=await response.json();
-    malecnsView?.setNetwork(data);
+    const response=await fetch(url,{cache:'no-store',signal:controller.signal});
+    if(!response.ok)return null;
+    return await response.json();
+  }finally{
+    clearTimeout(timer);
+  }
+}
+
+async function loadMaleCNSNetwork(){
+  if(maleCNSNetworkBusy)return;
+  maleCNSNetworkBusy=true;
+  try{
+    const data=await fetchJSONWithTimeout('/api/studio/malecns/network',1800);
+    if(data)malecnsView?.setNetwork(data);
   }catch(_){}
+  finally{maleCNSNetworkBusy=false;}
 }
 
 async function pollMaleCNS(){
+  if(maleCNSPollBusy)return;
+  maleCNSPollBusy=true;
   try{
-    const response=await fetch('/api/studio/malecns',{cache:'no-store'});
-    if(!response.ok)return;
-    const state=await response.json();
-    malecnsView?.pushState(state);
+    const state=await fetchJSONWithTimeout('/api/studio/malecns',1200);
+    if(state)malecnsView?.pushState(state);
   }catch(_){}
+  finally{maleCNSPollBusy=false;}
 }
 
 async function refreshComparisons(){
@@ -554,11 +570,13 @@ async function boot(){
   brainView=new BrainActivityView($('#brain-canvas'),$('#brain-status'));
   malecnsView=new MaleCNSOverlay($('#malecns-canvas'));
   paintIdleArm();
-  await Promise.all([refreshComparisons(),loadMaleCNSNetwork(),pollMaleCNS()]);
+  await refreshComparisons();
   pollStudio();
+  pollMaleCNS();
+  loadMaleCNSNetwork();
   setInterval(refreshComparisons,12000);
-  setInterval(pollMaleCNS,800);
-  setInterval(loadMaleCNSNetwork,2500);
+  setInterval(pollMaleCNS,2500);
+  setInterval(loadMaleCNSNetwork,30000);
 }
 
 $('#new-artwork').textContent='SERVER AUTONOMOUS';
