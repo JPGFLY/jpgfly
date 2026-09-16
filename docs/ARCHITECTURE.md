@@ -100,9 +100,7 @@ JPGFLY includes a procedural fallback known publicly as **Dumb Dumb Mode**. If a
 
 ## Network direction
 
-**The Fly chose Solana.** JPGFLY is moving forward on Solana.
-
-Token contracts and agent-wallet identifiers are intentionally kept out of the current application source and public API. Private keys, signing authority, custody, and deployment secrets remain outside the repository.
+**The Fly decided to move to Solana as its home.**
 
 ## Production boundary
 
