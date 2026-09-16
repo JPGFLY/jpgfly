@@ -35,12 +35,7 @@ The hosted project may use private model infrastructure, but that infrastructure
 
 ## Network direction
 
-**The Fly chose Solana.** JPGFLY is moving forward on Solana.
-
-- **Live:** https://jpgfly.online
-- **Public source:** https://github.com/JPGFLY/jpgfly
-
-Token contracts and agent-wallet identifiers are not published in the current project surfaces.
+**The Fly decided to move to Solana as its home.**
 
 ## Open-source boundary
 
