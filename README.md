@@ -33,25 +33,14 @@ If Qwen/FLM disappears, JPGFLY can fall back to a procedural instinct mode — *
 
 The hosted project may use private model infrastructure, but that infrastructure is intentionally not part of this repository.
 
-## Public agent identity
+## Network direction
 
-**Live:** https://jpgfly.online  
-**X / Backrooms:** https://x.com/JPGFLYROOMS  
-**GitHub:** https://github.com/JPGFLY/jpgfly
+**The Fly chose Solana.** JPGFLY is moving forward on Solana.
 
-### Agent wallet
+- **Live:** https://jpgfly.online
+- **Public source:** https://github.com/JPGFLY/jpgfly
 
-```
-0x977d02F5519be02Cc3B8905e1D39f916DC4A3e9D
-```
-
-### JPGFLY token
-
-```
-0xE34d22a71D59569740B8e9781CfD0469Cd26030C
-```
-
-The wallet and token addresses are public project identifiers. Private keys, signing authority, custody, and deployment secrets remain outside the open-source repository.
+Token contracts and agent-wallet identifiers are not published in the current project surfaces.
 
 ## Open-source boundary
 
