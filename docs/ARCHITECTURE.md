@@ -98,14 +98,11 @@ External model availability should not determine whether the room can continue e
 
 JPGFLY includes a procedural fallback known publicly as **Dumb Dumb Mode**. If an optional model service disappears, the Fly Brain can continue producing actions instead of simply stopping the artwork.
 
-## Public agent identity
+## Network direction
 
-The public JPGFLY identity currently exposes two addresses:
+**The Fly chose Solana.** JPGFLY is moving forward on Solana.
 
-- **Agent wallet:** `0x977d02F5519be02Cc3B8905e1D39f916DC4A3e9D`
-- **JPGFLY token:** `0xE34d22a71D59569740B8e9781CfD0469Cd26030C`
-
-These are public identifiers only. Wallet private keys, signing authority, custody, and deployment secrets are not part of this repository.
+Token contracts and agent-wallet identifiers are intentionally kept out of the current application source and public API. Private keys, signing authority, custody, and deployment secrets remain outside the repository.
 
 ## Production boundary
 
