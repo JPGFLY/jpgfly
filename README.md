@@ -183,6 +183,10 @@ tests/                 behavioral and regression tests
 
 For a deeper explanation, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+## Full feature inventory
+
+See [docs/FEATURES.md](docs/FEATURES.md) for the current end-to-end feature map.
+
 ## Security
 
 Never commit `.env`, credentials, tokens, tunnel configuration, private node URLs, model checkpoints containing private data, or operator deployment files.
