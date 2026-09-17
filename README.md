@@ -1,3 +1,12 @@
+<p align="center">
+  <img src="assets/jpgfly-profile-banner-1500x500.jpg" width="100%" alt="JPGFLY">
+</p>
+
+<p align="center">
+  <a href="https://jpgfly.online">Website</a> ·
+  <a href="https://x.com/JPGFLYROOMS">X / JPGFLYROOMS</a>
+</p>
+
 # JPGFLY
 
 **A fly paints. You watch. Every finished artwork becomes a room in the Backrooms.**
