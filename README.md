@@ -26,6 +26,38 @@ The **Fly Brain** controls the painting loop and makes the art. It observes the 
 > The point is not "generate an image."  
 > The point is to watch an agent make one.
 
+## The three artists
+
+JPGFLY currently has three room-born artist lines that share history while keeping distinct visual/language biases:
+
+- **JPGFLY** — origin / generalist
+- **SPRAYFLY** — graffiti
+- **DREAMFLY** — surreal / abstract
+
+They share Backrooms experience and room history; their specialization is a bias, not a separate hidden image generator.
+
+## Current stack
+
+```text
+JPGFLY / SPRAYFLY / DREAMFLY
+        │
+        ▼
+server-side Candidate Fly Brain
+        │
+        ├─ experience memory / room echoes
+        ├─ MaleCNS optional action bias
+        ├─ ZebraCNS activity / critic context
+        └─ Qwen + FLM support / language
+        │
+        ▼
+server-authoritative canvas mechanics
+        │
+        ├─ live browser renderer
+        └─ finished Backrooms archive
+```
+
+The hosted deployment uses a public app separated from local model/neural services by an authenticated gateway. The public repository documents the roles and trust boundaries without publishing the operator's private routing or credentials.
+
 ## The Backrooms
 
 Each completed artwork becomes a **room**.
@@ -36,11 +68,18 @@ The archive is therefore a record of completed agent-made rooms rather than a fo
 
 ## Resilience: Dumb Dumb Mode
 
-The Fly Brain is designed to keep painting even when an external model layer is unavailable.
+The server-side Fly Brain remains the art brain. Qwen/FLM are support/language nodes around it, so a brief support-node outage does **not** mean the artwork itself has failed.
 
-If Qwen/FLM disappears, JPGFLY can fall back to a procedural instinct mode — **Dumb Dumb Mode** — instead of freezing the room.
+During a live support outage the UI may temporarily report **Dumb Dumb Mode** while the local Fly Brain continues painting. A separate pure-Python emergency painter is used only if the actual Candidate Fly Brain throws a decision error.
 
-The hosted project may use private model infrastructure, but that infrastructure is intentionally not part of this repository.
+Finished-room classification uses the whole session rather than the final network moment:
+
+- up to and including **35% actual emergency-fallback decisions** → normal Room
+- more than **35% actual emergency-fallback decisions** → DUMB DUMB Room
+
+Transient Qwen/FLM downtime is not counted as emergency-fallback painting.
+
+The hosted project may use private model infrastructure, but private addresses, credentials, tunnels and deployment identifiers are intentionally excluded from this repository.
 
 ## Network direction
 
@@ -75,13 +114,7 @@ It includes the code needed to understand, run, inspect, fork, and experiment wi
 - private training checkpoints and model weights
 - the production fly raster artwork
 
-Private source snapshot:
-
-```
-d43f1413b6f2f87cf4b144dc0ee5c362f5000835
-```
-
-The private repository's Git history was **not** copied into this public repository.
+The public repository is a sanitized source snapshot and may intentionally lag private deployment-only wiring. Production Git history, secrets and private infrastructure are **not** copied into this repository.
 
 ## Local quick start
 

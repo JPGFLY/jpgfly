@@ -31,8 +31,10 @@ Typical local ports:
 
 - Ollama/Qwen: `127.0.0.1:11434`
 - FLM bridge: `127.0.0.1:4680`
+- authenticated model gateway: `127.0.0.1:4681`
 - MaleCNS service: `127.0.0.1:4690`
+- ZebraCNS service: `127.0.0.1:4770`
 
-Do not expose raw Ollama, FLM, or MaleCNS endpoints directly to the public internet. If remote access is required, use a narrow authenticated gateway, separate credentials from application control credentials, TLS, request-size limits, and a route allowlist.
+Do not expose raw Ollama, FLM, MaleCNS or ZebraCNS endpoints directly to the public internet. If remote access is required, use a narrow authenticated gateway, separate credentials from application control credentials, TLS, request-size limits, and a route allowlist.
 
-The Fly Brain itself is Python and can continue painting without the language/model services. A decision failure in the richer Candidate Fly Brain falls back to DUMB DUMB pure-Python mode rather than trusting an unavailable remote dependency.
+The Fly Brain itself is Python and can continue painting during short language/model outages. A genuine Candidate Fly Brain decision failure switches to the independent DUMB DUMB pure-Python emergency painter. Finished Rooms remain normal through 35% actual emergency-fallback decisions; only a ratio above 35% is archived as DUMB DUMB.

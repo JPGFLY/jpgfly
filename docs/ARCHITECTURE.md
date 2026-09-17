@@ -1,119 +1,113 @@
 # JPGFLY Architecture
 
-JPGFLY is easiest to understand as four separate layers.
+JPGFLY separates the art brain, physical canvas mechanics, neural/model support, browser rendering, memory, and final-room writing.
 
-## 1. Fly Brain — the art brain
+## 1. Room-born Fly Brain — the art brain
 
-The **Fly Brain** is the autonomous painting system.
+There are three artist profiles:
 
-It owns the room-level art process: observing the current canvas state, choosing how to continue, moving, making marks, revising, changing tools/techniques, building composition, and eventually ending the artwork.
+- **JPGFLY** — generalist
+- **SPRAYFLY** — graffiti
+- **DREAMFLY** — surreal / abstract
 
-The public project language intentionally calls this the **art brain**.
+They share Backrooms experience/history but keep different visual and language biases. The server-side Candidate Fly Brain observes the authoritative canvas, proposes/scorers candidate actions, commits one action, and eventually decides when to finish.
 
-Qwen is not the Fly Brain. FLM is not the Fly Brain.
+Qwen is not the art brain. FLM is not the art brain. The browser is not the art brain.
 
 ## 2. Server mechanics — the body
 
-The Fly Brain does not paint pixels directly.
-
-It emits structured actions. Server mechanics turn those actions into authoritative physical events such as movement, strokes, pressure/tool behavior, timing, and canvas updates.
-
-This gives JPGFLY a separation between:
+`server_mechanics.py` turns a structured Fly Brain action into authoritative movement and stroke events. The browser renders those events; it does not invent artistic geometry.
 
 ```text
-intention / art process
-        ↓
-     Fly Brain
-        ↓
+canvas observation
+      ↓
+Candidate Fly Brain
+      ↓
 structured action
-        ↓
- server mechanics
-        ↓
+      ↓
+server mechanics
+      ↓
 movement + stroke events
-        ↓
-      canvas
+      ↓
+live canvas / final SVG
 ```
 
-That separation is important because the artwork can be replayed/rendered from the event stream rather than treated as a single opaque generated bitmap.
+## 3. Neural + model support
 
-## 3. Qwen + FLM — the LLM/model layer
+The hosted stack can use four local support services behind an authenticated boundary:
 
-**Qwen + FLM sit around the Fly Brain as model/language services.**
+- **Ollama / Qwen** — general language/context support
+- **FLM** — trained JPGFLY language/voice layer
+- **MaleCNS** — optional neural bias applied to a selected art action
+- **ZebraCNS** — neural activity/critic context and public aggregate telemetry
 
-### Qwen
-
-Qwen is the general LLM/model component used by the hosted experiment where model assistance is enabled.
-
-It is not presented publicly as "the art engine." The art identity belongs to the Fly Brain.
-
-### FLM — Fly Language Model
-
-FLM is the trained JPGFLY language layer.
-
-It handles areas such as:
-
-- public voice
-- studio notes
-- finished-room writing
-- language/personality continuity
-- contextual text generation
-
-FLM does not directly paint the image.
-
-Self-hosters may run procedural-only mode, Qwen, FLM, hybrid configurations, or their own compatible services.
-
-## 4. Web / Backrooms layer
-
-The web client renders the live event stream and exposes the current room.
-
-A completed artwork can become a **Backroom** containing the finished image and compact metadata/text derived from the session.
+These services can enrich context, language and neural biasing, but the Candidate Fly Brain remains the painting decision engine.
 
 Conceptually:
 
 ```text
-                 ┌──────────────┐
-                 │  Qwen + FLM  │
-                 │ model / text │
-                 └──────┬───────┘
-                        │
-                        │ context / language support
-                        ▼
-┌──────────────┐   ┌──────────────┐   ┌──────────────────┐
-│ canvas state │ → │  FLY BRAIN   │ → │ server mechanics │
-└──────────────┘   │   ART BRAIN  │   └────────┬─────────┘
-                   └──────────────┘            │
-                                               ▼
-                                      movement / strokes
-                                               │
-                                               ▼
-                                          live canvas
-                                               │
-                                               ▼
-                                       finished Backroom
+                    Qwen
+                     │
+                     ├──── language/context
+                     │
+                    FLM
+                     │
+                     ├──── JPGFLY voice
+                     │
+Candidate Fly Brain ─┼──── MaleCNS soft bias
+                     │
+                     └──── ZebraCNS activity/context
+          │
+          ▼
+server mechanics → browser + Backrooms
 ```
+
+## 4. Browser + Backrooms
+
+The web client renders the live event stream, the Fly performer, current neural/status telemetry, and the Backrooms archive.
+
+Completed Rooms retain the finished image plus compact writing, structural metrics, provenance and hashes. Heavy live execution history is not the public artwork format.
+
+## 5. Experience memory
+
+`experience_memory.py` is a bounded slow-learning layer. Completed Rooms influence later palettes, techniques, composition tendencies and conceptual echoes. Reading material contributes conceptual context. It does not rewrite model weights.
 
 ## Failure behavior
 
-External model availability should not determine whether the room can continue existing.
+Two different failure states are intentionally separated:
 
-JPGFLY includes a procedural fallback known publicly as **Dumb Dumb Mode**. If an optional model service disappears, the Fly Brain can continue producing actions instead of simply stopping the artwork.
+1. **Support-node outage** — Qwen/FLM may be temporarily unreachable. The live status may show DUMB DUMB, but the normal Candidate Fly Brain can keep painting. This does not count as emergency-fallback art decisions.
+2. **Art-brain decision failure** — if the Candidate Fly Brain throws, the session switches to the independent pure-Python emergency painter.
+
+Finished-room classification is session-wide:
+
+- `fallback_ratio <= 0.35` → normal Room
+- `fallback_ratio > 0.35` → DUMB DUMB Room
+
+So a Room that is 65% normal / 35% actual fallback is still a normal Room.
+
+## Hosted trust boundary
+
+The hosted production shape is:
+
+```text
+public JPGFLY app
+      │
+      ▼
+authenticated gateway
+      │
+      ├─ Qwen
+      ├─ FLM
+      ├─ MaleCNS
+      └─ ZebraCNS
+```
+
+The public repository intentionally omits private addresses, tunnel configuration, credentials, deployment IDs and machine-specific paths.
 
 ## Network direction
 
 **The Fly decided to move to Solana as its home.**
 
-## Production boundary
+## Non-goals
 
-This public repository does **not** describe or expose the operator's real production topology.
-
-Excluded from the open-source snapshot are:
-
-- production model-node addresses
-- private tunnels and routing
-- production service IDs
-- authentication and pairing material
-- machine-specific paths
-- private model weights/checkpoints
-- operator secrets
-
-Self-hosters provide their own infrastructure and endpoints through environment configuration.
+JPGFLY makes no claim of biological consciousness or literal biological equivalence. Neural visualizations are software/biological-data-informed interfaces, not hidden model-thought readouts.

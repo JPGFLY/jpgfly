@@ -721,7 +721,7 @@ def asset(name:str):
 
 @app.get("/api/config")
 def public_config():
-    return {"project":"JPGFLY","agentWallet":os.environ.get("JPGFLY_AGENT_WALLET","0x977d02F5519be02Cc3B8905e1D39f916DC4A3e9D").strip() or "0x977d02F5519be02Cc3B8905e1D39f916DC4A3e9D","build":BUILD_ID,"mode":"BACKROOMS","archiveMode":"image+text","replayStorage":False,"videoStorage":False,"timeStandard":TIME_STANDARD,"brainMode":configured_brain_mode(),"textProvider":configured_text_provider().upper(),"modelStack":"QWEN + FLM","artBrain":"FLY BRAIN","visualEngine":"FLY BRAIN","flyLanguageModel":"FLM","autonomousStudio":os.environ.get("JPGFLY_AUTONOMOUS_STUDIO","true").lower()!="false","currentStudioSession":CURRENT_STUDIO_ID}
+    return {"project":"JPGFLY","build":BUILD_ID,"mode":"BACKROOMS","archiveMode":"image+text","replayStorage":False,"videoStorage":False,"timeStandard":TIME_STANDARD,"brainMode":configured_brain_mode(),"textProvider":configured_text_provider().upper(),"modelStack":"QWEN + FLM","artBrain":"FLY BRAIN","visualEngine":"FLY BRAIN","flyLanguageModel":"FLM","autonomousStudio":os.environ.get("JPGFLY_AUTONOMOUS_STUDIO","true").lower()!="false","currentStudioSession":CURRENT_STUDIO_ID}
 
 @app.get("/api/public/activity")
 def public_activity():return {"mode":"LIVE","events":PUBLIC_ACTIVITY}
