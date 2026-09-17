@@ -892,7 +892,7 @@ async def create_session(request:StartRequest):
     limits=parse_limits(request.limits); brain=create_fly_brain(seed,complexity=request.complexity,mutation=request.mutation,density=request.density); mechanics=ServerCanvasMechanics(seed,session_id)
     dumb_brain=ProceduralFlyBrain(seed,request.complexity,request.mutation,request.density,getattr(brain,"experience",{}) or {})
     dumb_brain.mode="DUMB DUMB MODE · PURE PYTHON FALLBACK"
-    session={"session_id":session_id,"status":"CREATED","seed":seed,"brain_mode":brain.mode,"brain_version":BRAIN_VERSION,"parameters":{"complexity":request.complexity,"mutation":request.mutation,"density":request.density},"limits":public_limits(limits),"decision_count":0,"physical_action_count":0,"brain_decisions":[],"evaluation_checkpoints":[],"public_commentary":[],"completion_reason":None,"events":mechanics.events,"hashes":{},"_brain":brain,"_dumb_brain":dumb_brain,"_mechanics":mechanics,"_limits":limits,"_decision_lock":asyncio.Lock(),"_commentary_busy":False,"_full_brain_from_start":None,"_created":time.monotonic(),"_accepting":True,"_frozen":False}
+    session={"session_id":session_id,"status":"CREATED","seed":seed,"brain_mode":brain.mode,"brain_version":BRAIN_VERSION,"parameters":{"complexity":request.complexity,"mutation":request.mutation,"density":request.density},"limits":public_limits(limits),"decision_count":0,"physical_action_count":0,"brain_decisions":[],"evaluation_checkpoints":[],"public_commentary":[],"completion_reason":None,"events":mechanics.events,"hashes":{},"_brain":brain,"_dumb_brain":dumb_brain,"_mechanics":mechanics,"_limits":limits,"_decision_lock":asyncio.Lock(),"_commentary_busy":False,"_full_brain_from_start":None,"_hard_fallback_decisions":0,"_normal_art_decisions":0,"_last_full_brain_mode":brain.mode,"_created":time.monotonic(),"_accepting":True,"_frozen":False}
     SESSIONS[session_id]=session; return public_session(session)
 
 @app.get("/api/sessions")
@@ -1003,6 +1003,17 @@ async def session_decision(session_id:str,request:DecisionRequest):
             action=await asyncio.to_thread(session["_brain"].decide,BrainRequest(observation=observation),session["_limits"])
         data=action.model_dump()
         session["brain_mode"]=session["_brain"].mode
+
+        # Count only the actual emergency painter toward final Room fallback.
+        # A transient support-node status label is not an art-brain failure.
+        hard_fallback=session.get("_brain") is session.get("_dumb_brain")
+        if hard_fallback:
+            session["_hard_fallback_decisions"]=int(session.get("_hard_fallback_decisions",0))+1
+        else:
+            session["_normal_art_decisions"]=int(session.get("_normal_art_decisions",0))+1
+            if "DUMB DUMB" not in str(session["brain_mode"]).upper():
+                session["_last_full_brain_mode"]=session["brain_mode"]
+
         fly_brain_ok="DUMB DUMB" not in str(session["brain_mode"]).upper()
         if session.get("_full_brain_from_start") is None:session["_full_brain_from_start"]=fly_brain_ok
         elif not fly_brain_ok:session["_full_brain_from_start"]=False
@@ -1091,8 +1102,14 @@ def finalize_session(session_id:str,request:FinalizeRequest):
         "color_counts":{value:sum(1 for action in actions if action.get("color")==value) for value in sorted({action.get("color") for action in actions if action.get("color")})},
         "earlier_rooms":recent_room_memory(8),
     }
+    hard_fallback_decisions=int(session.get("_hard_fallback_decisions",0))
+    normal_art_decisions=int(session.get("_normal_art_decisions",0))
+    total_art_decisions=hard_fallback_decisions+normal_art_decisions
+    fallback_ratio=(hard_fallback_decisions/total_art_decisions) if total_art_decisions else 0.0
+    archive_dumb_dumb=fallback_ratio>0.35
+
     try:
-        if "DUMB DUMB" in str(session.get("brain_mode") or ""):
+        if archive_dumb_dumb:
             room.update(dumb_dumb_room_text(context,session["seed"]))
             text_provider="DUMB_DUMB"
         elif configured_text_provider()=="hybrid":
@@ -1131,7 +1148,7 @@ def finalize_session(session_id:str,request:FinalizeRequest):
             text_provider="LITERARY_FALLBACK"
     except Exception as exc:
         LOGGER.exception("Room text generation failed")
-        if "DUMB DUMB" in str(session.get("brain_mode") or ""):
+        if archive_dumb_dumb:
             room.update(dumb_dumb_room_text(context,session["seed"]))
             text_provider="DUMB_DUMB"
         else:
@@ -1142,7 +1159,7 @@ def finalize_session(session_id:str,request:FinalizeRequest):
     # Third-party/optional writers may not yet implement the memory-thread field.
     # Fill only that missing field without overwriting successful generated prose.
     if not room.get("memory_thread"):
-        if "DUMB DUMB" in str(session.get("brain_mode") or ""):
+        if archive_dumb_dumb:
             room["memory_thread"]=dumb_dumb_room_text(context,session["seed"]).get("memory_thread","")
         else:
             room["memory_thread"]=generate_room_fallback(context,session["seed"]).get("memory_thread","")
@@ -1152,6 +1169,17 @@ def finalize_session(session_id:str,request:FinalizeRequest):
     fingerprint=digest({"seed":session["seed"],"decisionHistoryHash":decision_history_hash,"eventHistoryHash":event_history_hash,"evaluationHistoryHash":evaluation_history_hash})
     provenance={"archive":"JPGFLY Backrooms","creationId":"0x"+session_id,"artifactReference":artifact,"timeStandard":TIME_STANDARD,"decisionHistoryHash":decision_history_hash,"eventHistoryHash":event_history_hash,"evaluationHistoryHash":evaluation_history_hash,"visualContextHash":digest(visual_context)}
     provenance_hash=digest(provenance); completion_hash=digest({"creationId":"0x"+session_id,"state":"COMPLETED","fingerprint":fingerprint,"provenanceHash":provenance_hash})
+    if not archive_dumb_dumb and "DUMB DUMB" in str(session.get("brain_mode") or "").upper():
+        session["brain_mode"]=session.get("_last_full_brain_mode") or configured_brain_mode()
+
+    visual_context["fallback_summary"]={
+        "hard_fallback_decisions":hard_fallback_decisions,
+        "normal_art_decisions":normal_art_decisions,
+        "fallback_ratio":round(fallback_ratio,4),
+        "archive_threshold":0.35,
+        "archive_dumb_dumb":archive_dumb_dumb,
+    }
+
     session.update(status="COMPLETED",state="COMPLETED",**room,completed_at=completed_at,concept=concept,thought_fragments=thoughts,text_provider=text_provider,text_error=session.get("_room_text_error"),events=events,provenance=provenance,artifact_uri=artifact_uri,duration=final_timestamp,structural_metrics=structural_metrics,visual_context=visual_context,hashes={"fingerprint":fingerprint,"provenance":provenance_hash,"completion":completion_hash},_frozen=True)
     # Learn from the authoritative completed room before compact persistence drops
     # the heavy decision/event history. This keeps future rooms autobiographical
