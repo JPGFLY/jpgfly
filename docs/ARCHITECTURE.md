@@ -39,7 +39,7 @@ The hosted stack can use four local support services behind an authenticated bou
 - **Ollama / Qwen** — general language/context support
 - **FLM** — trained JPGFLY language/voice layer
 - **MaleCNS** — optional neural bias applied to a selected art action
-- **ZebraCNS** — neural activity/critic context and public aggregate telemetry
+- **ZebraCNS** — in-loop critic: real activity applies bounded pressure to candidate ranking and finish timing; it never emits strokes directly
 
 These services can enrich context, language and neural biasing, but the Candidate Fly Brain remains the painting decision engine.
 
@@ -56,7 +56,7 @@ Conceptually:
                      │
 Candidate Fly Brain ─┼──── MaleCNS soft bias
                      │
-                     └──── ZebraCNS activity/context
+                     └──── ZebraCNS bounded critic pressure
           │
           ▼
 server mechanics → browser + Backrooms
