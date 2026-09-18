@@ -1,0 +1,16 @@
+{
+  "name": "JPGFLY",
+  "short_name": "JPGFLY",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    {
+      "src": "/images/jpgfly-icon-white.png?v=fly-white-20260915-1",
+      "sizes": "256x256",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
