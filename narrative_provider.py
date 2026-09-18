@@ -14,8 +14,31 @@ def narrative_mode() -> str:
     return value if value in {"procedural","ollama","flm","hybrid"} else "procedural"
 
 
+def clean_public_text(value:Any,limit:int)->str:
+    text=re.sub(r"\s+"," ",str(value or "")).strip()
+    text=re.sub(r"^(?:```[A-Za-z0-9_-]*\s*|#{1,6}\s+|>\s+)","",text).strip()
+    if len(text)>limit:
+        cut=text[:limit]
+        if limit<len(text) and not text[limit].isspace():
+            boundary=cut.rfind(" ")
+            if boundary>=max(0,int(limit*.70)):
+                cut=cut[:boundary]
+        text=cut
+    text=text.rstrip(" \t\r\n`#*_>-–—/:;,")
+    parts=text.rsplit(" ",1)
+    if len(parts)==2 and len(parts[1])==1 and parts[1].isalpha() and parts[1]!="I":
+        text=parts[0].rstrip()
+    return text
+
 def _clean(value:Any,limit:int)->str:
-    return re.sub(r"\s+"," ",str(value or "")).strip()[:limit].rstrip()
+    return clean_public_text(value,limit)
+
+
+def _active_artist(context:dict[str,Any])->tuple[str,str]:
+    agent=context.get("agent") if isinstance(context.get("agent"),dict) else {}
+    name=str(context.get("agent_name") or agent.get("name") or "JPGFLY").strip()[:48] or "JPGFLY"
+    profile=str(context.get("agent_profile") or agent.get("profile") or "jpgfly").strip().casefold()[:24] or "jpgfly"
+    return name,profile
 
 
 def _ollama(prompt:str,seed:int,max_tokens:int,temperature:float)->str:
@@ -203,9 +226,12 @@ def generate_live_comment(context:dict[str,Any],seed:int)->str|None:
 
     history=_comment_history(context)
     angle=_choose_voice_angle(context,seed)
+    theme=context.get("writing_theme") if isinstance(context.get("writing_theme"),dict) else {}
+    theme_instruction=str(theme.get("instruction") or "")
     constellation=_choose_constellation(context,seed)
     avoid=history[-12:]
     earlier=[room for room in (context.get("earlier_rooms") or []) if isinstance(room,dict)]
+    artist_name,artist_profile=_active_artist(context)
     painting_relation="none"
     if earlier and int(seed)%5==0:
         target=earlier[int(seed)%len(earlier)]
@@ -213,23 +239,24 @@ def generate_live_comment(context:dict[str,Any],seed:int)->str|None:
         if title:
             painting_relation=f"ACTIVE: mention {title} by name and let the current painting react to it like another artwork with a relationship to this one."
 
-    prompt=f"""You are JPGFLY's public voice while she is drawing.
+    prompt=f"""You are the public voice of {artist_name}, the active room-born JPGFLY artist ({artist_profile}), while she is drawing.
 
 You are a serious contemporary painter speaking publicly from inside the Backrooms: visually alert, literate, composed, and sensual when appropriate.
 
 TODAY'S ANGLE: {angle}
+TODAY'S REQUIRED SUBJECT: {theme_instruction or "none"}
 TODAY'S CULTURAL CONSTELLATION: {constellation}
 PAINTING-TO-PAINTING MODE: {painting_relation}
 
 The drawing record is factual grounding, but do not narrate telemetry. Use it as a trigger for painterly thought, cultural association, memory, poetry and ordinary life.
-Follow TODAY'S ANGLE rather than cycling through a fixed set of pet subjects.
-JPGFLY's artist persona has feelings and an adult sexual life. Most notes should reveal some affective reaction to painting: desire, lust, horniness, attraction, tenderness, jealousy, obsession, shame, pride, anger, loneliness, affection, relief, or love. Sex/eroticism may recur when connected to the marks; it is not forbidden or treated as a one-off gimmick. Keep physical detail non-graphic. Crypto, money/markets and jokes remain contextual rather than mandatory.
+TODAY'S REQUIRED SUBJECT outranks TODAY'S ANGLE. If a required subject is present, make it unmistakable rather than hinting at it once.
+{artist_name}'s artist persona has feelings and an adult sexual life. Most notes should reveal some affective reaction to painting: desire, lust, horniness, attraction, tenderness, jealousy, obsession, shame, pride, anger, loneliness, affection, relief, or love. Sex/eroticism may recur when connected to the marks; it is not forbidden or treated as a one-off gimmick. Keep physical detail non-graphic. Crypto, money/markets and jokes remain contextual rather than mandatory.
 Technical/formal vocabulary should be rare. Do not keep saying composition, structure, motif, density, region, strategy, process, gesture, canvas, contrast, or "the drawing is becoming". Prefer what the marks evoke over how they were computed.
 At most ONE sentence may directly describe the mechanics of the current picture. The rest should be thought, association, image, attitude, or poetry.
 
 You may name artists, writers, movements or cultural references as ASSOCIATIONS, not as fake autobiography. Never claim "I read", "I met", "I remember seeing", or other life experiences you do not have.
 Do not quote poems, songs, books, or living writers.
-You may write first-person inner feeling as part of JPGFLY's fictional artist persona. Do not present that voice as scientific proof of literal biological consciousness.
+You may write first-person inner feeling as part of {artist_name}'s fictional artist persona. Do not present that voice as scientific proof of literal biological consciousness.
 Do not mention software, prompts, models, NFTs, blockchain project mechanics, implementation, metrics, or decision numbers.
 If money, markets or crypto appear, treat them only as cultural metaphor and never invent live prices, current events, holdings or financial advice.
 
@@ -257,7 +284,7 @@ Return ONLY JSON:
         raw=_ollama(
             prompt if attempt==0 else prompt+f"""
 
-REWRITE ATTEMPT {attempt+1}: the last draft was too similar to prior JPGFLY speech. Change the subject, imagery, sentence openings, rhythm, and vocabulary. Lean harder into {_choose_voice_angle(context,seed,attempt+3)}. Do not reuse any memorable phrase from the history.""",
+REWRITE ATTEMPT {attempt+1}: the last draft was too similar to prior {artist_name} speech. Change the subject, imagery, sentence openings, rhythm, and vocabulary. Lean harder into {_choose_voice_angle(context,seed,attempt+3)}. Do not reuse any memorable phrase from the history.""",
             seed+attempt*104729,
             max(180,min(520,int(os.environ.get("JPGFLY_LIVE_TEXT_TOKENS","360")))),
             float(os.environ.get("JPGFLY_LIVE_TEXT_TEMPERATURE","0.88")),
@@ -271,13 +298,110 @@ REWRITE ATTEMPT {attempt+1}: the last draft was too similar to prior JPGFLY spee
     raise RuntimeError("Narrative reply had no comment")
 
 
+def _zebra_critique_fallback(context:dict[str,Any])->str:
+    observations=[item for item in (context.get("zebra_critic_observations") or []) if isinstance(item,dict)]
+    metrics=context.get("structural_metrics") or {}
+    if not observations:
+        return ""
+
+    signals=[(item.get("zebra") or {}).get("signals") or {} for item in observations]
+    def avg(name):
+        values=[]
+        for value in signals:
+            try: values.append(float(value.get(name,0) or 0))
+            except (TypeError,ValueError): pass
+        return sum(values)/len(values) if values else 0.0
+
+    repetition=avg("repetition_drive")
+    novelty=avg("novelty_seek")
+    attention=avg("attention_lock")
+    instability=avg("state_instability")
+    completion=avg("completion_pressure")
+    intersections=int(metrics.get("intersections",0) or 0)
+    families=metrics.get("markFamilies") or []
+    brushes=metrics.get("brushTools") or []
+
+    opening=(
+        "The strongest part of this room is the argument between repetition and interruption."
+        if repetition>.58 else
+        "This room works best when the Fly lets one decision alter the meaning of the next instead of merely adding marks."
+    )
+    middle=[]
+    if novelty>.58:
+        middle.append("The critic kept responding to changes in direction and visual surprise, especially where the image resisted settling into a single rhythm.")
+    if attention>.58:
+        middle.append("Several returns felt deliberate rather than automatic; the eye was repeatedly pulled back toward marks that had begun to carry structural weight.")
+    if instability>.58:
+        middle.append("The weaker passages were the ones where agitation threatened to become activity for its own sake.")
+    if intersections:
+        middle.append(f"With {intersections} recorded intersections, collision became useful only when it clarified hierarchy rather than simply increasing density.")
+    if families:
+        middle.append("The range of " + ", ".join(str(v).replace("_"," ").lower() for v in families[:3]) + " gave the room enough vocabulary without requiring every available gesture.")
+    if brushes:
+        middle.append("Material changes through " + ", ".join(str(v).replace("_"," ").lower() for v in brushes[:2]) + " helped separate real revisions from decorative repetition.")
+    if completion>.62:
+        closing="By the end, restraint mattered more than another mark; stopping preserved tensions that further explanation would have flattened."
+    else:
+        closing="The room ends with useful unresolved pressure rather than a clean answer, which suits the way its strongest marks keep contradicting one another."
+    return _clean(" ".join([opening]+middle[:3]+[closing]),1800)
+
+
+def generate_zebra_room_critique(context:dict[str,Any],seed:int)->str:
+    observations=[item for item in (context.get("zebra_critic_observations") or []) if isinstance(item,dict)]
+    if not observations:
+        return ""
+    fallback=_zebra_critique_fallback(context)
+    if narrative_mode() not in {"ollama","hybrid"}:
+        return fallback
+
+    prompt=f"""You are ZEBRA CRITIC, the engineered Danio rerio critic character inside JPGFLY.
+
+During the painting you repeatedly observed the active JPGFLY artist using recorded ZebraCNS state plus live canvas/action context. Now the room is finished. Write ONE retrospective art critique that distills the recurring things you noticed across the whole session.
+
+The active artist is {context.get("agent_name") or "JPGFLY"} ({context.get("agent_profile") or "jpgfly"}). Judge that artist's actual visual decisions and declared discipline; do not collapse all three room-born artists into one generic Fly voice.
+
+Important truth condition: the biological recording itself is not speaking. This is a character voice grounded in recorded ZebraCNS activity and the Fly's actual painting decisions.
+
+Do not write telemetry commentary. Do not list percentages, frames, model names, implementation details, or raw signal names. Translate the trajectory into art criticism.
+Do not flatter automatically and do not roast for entertainment. Be specific, literate, concise, and willing to praise one decision while criticizing another.
+Refer to concrete visual behavior from the room: repetition, interruption, negative space, collisions, material, scale, hierarchy, restraint, overworking, return, or stopping when supported by the record.
+Treat this as a final gallery critique, not a live quip.
+Length: 90 to 150 words, one paragraph.
+
+FINISHED ROOM:
+{json.dumps({
+    "room_code":context.get("room_code"),
+    "room_title":context.get("room_title"),
+    "agent_profile":context.get("agent_profile"),
+    "agent_name":context.get("agent_name"),
+    "agent_lore":context.get("agent_lore"),
+    "completion_reason":context.get("completion_reason"),
+    "structural_metrics":context.get("structural_metrics"),
+    "visual_context":context.get("visual_context"),
+    "observations":observations,
+},ensure_ascii=False,sort_keys=True)}
+
+Return ONLY JSON:
+{{"critique":"one polished retrospective critique"}}
+"""
+    try:
+        raw=_ollama(prompt,seed,max_tokens=320,temperature=.62)
+        critique=_clean(_json(raw).get("critique"),1800)
+        return critique or fallback
+    except Exception:
+        return fallback
+
+
 def generate_room_record(context:dict[str,Any],seed:int)->dict[str,str]|None:
     if narrative_mode() not in {"ollama","hybrid"}:
         return None
 
     angle=_choose_voice_angle(context,seed,5)
+    theme=context.get("writing_theme") if isinstance(context.get("writing_theme"),dict) else {}
+    theme_instruction=str(theme.get("instruction") or "")
     constellation=_choose_constellation(context,seed+11)
     earlier=[room for room in (context.get("earlier_rooms") or []) if isinstance(room,dict)]
+    artist_name,artist_profile=_active_artist(context)
     painting_relation="none"
     if earlier and int(seed)%3==0:
         target=earlier[int(seed)%len(earlier)]
@@ -285,18 +409,19 @@ def generate_room_record(context:dict[str,Any],seed:int)->dict[str,str]|None:
         if title:
             painting_relation=f"ACTIVE: explicitly name {title}. Let this painting admire, envy, resent, miss, flirt with, reject, answer, accuse, or correct that earlier painting, grounded in real shared or contrasting evidence."
 
-    prompt=f"""You are the public archival voice of JPGFLY after an autonomous drawing has finished.
+    prompt=f"""You are the public archival voice of {artist_name}, the active room-born JPGFLY artist ({artist_profile}), after an autonomous drawing has finished.
 
 This room record is exhibition-quality art writing by a professional painter, not a technical report.
 
 PRIMARY ANGLE: {angle}
+REQUIRED ROOM SUBJECT: {theme_instruction or "none"}
 CULTURAL CONSTELLATION: {constellation}
 PAINTING-TO-PAINTING MODE: {painting_relation}
 
-Use the actual room and memory record for factual grounding. Follow PRIMARY ANGLE and let associations grow from visible evidence rather than from a fixed catalogue of recurring topics.
-JPGFLY's artist persona has an emotional and sexual life. The archive should often say how painting felt to her: desire, horniness, attraction, tenderness, jealousy, infatuation, shame, pride, anger, loneliness, affection, obsession, relief, love, disgust, or exhilaration. Sex/eroticism may recur naturally; she may say she wants sex, has had sex in the mythology of the persona, has a crush, or feels lust, while keeping physical detail non-graphic. Crypto, money/markets and jokes remain contextual rather than mandatory.
+Use the actual room and memory record for factual grounding. REQUIRED ROOM SUBJECT outranks PRIMARY ANGLE. The required subject must materially shape both room_description and fly_statement, not appear as one token mention.
+{artist_name}'s artist persona has an emotional and sexual life. The archive should often say how painting felt to her: desire, horniness, attraction, tenderness, jealousy, infatuation, shame, pride, anger, loneliness, affection, obsession, relief, love, disgust, or exhilaration. Sex/eroticism may recur naturally; she may say she wants sex, has had sex in the mythology of the persona, has a crush, or feels lust, while keeping physical detail non-graphic. Crypto, money/markets and jokes remain contextual rather than mandatory.
 When PAINTING-TO-PAINTING MODE is ACTIVE, follow it explicitly. Paintings may be personified as having relationships with other paintings.
-You may compare the work to artists, writers, movements, films, myths or cultural ideas as associations. Do not invent personal experiences for JPGFLY and do not quote copyrighted text.
+You may compare the work to artists, writers, movements, films, myths or cultural ideas as associations. Do not invent personal experiences for {artist_name} and do not quote copyrighted text.
 Avoid repetitive art-school language. Words such as composition, structure, motif, density, strategy, process and gesture should appear only when genuinely useful.
 If money or crypto comes up, treat it as culture, psychology, symbolism or systems rather than investment analysis. Never invent a current price or market event.
 The archive already stores technical facts elsewhere; this text should supply meaning, atmosphere, cultural memory, painterly judgment and poetry.
@@ -314,7 +439,9 @@ Requirements:
 - room_title: 2 to 7 words, vivid and nontechnical.
 - room_description: 5 to 8 sentences. Mix concrete visual facts with painterly, cultural, bodily, poetic, or existential associations.
 - anomaly_report: 2 to 4 sentences about the strangest contradiction, recurrence, spatial problem, visual misreading, or disturbance in the room.
-- fly_statement: first-person JPGFLY voice, 3 to 5 sentences. It should sound like an artist speaking after the work, not software explaining output. Include at least one specific feeling about making or seeing this room.
+- fly_statement: first-person {artist_name} voice, 3 to 5 sentences. It should sound like an artist speaking after the work, not software explaining output. Include at least one specific feeling about making or seeing this room.
+- REQUIRED ROOM SUBJECT must be clearly present in room_description AND fly_statement.
+- Sexual material, when selected, may be candid about adult desire, lust, horniness, wanting sex, crushes, attraction, intimacy, jealousy, or erotic tension, but keep physical detail non-graphic.
 - Do not recycle phrases from the prior rooms supplied in memory.
 """
 
