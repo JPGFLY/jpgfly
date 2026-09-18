@@ -77,6 +77,24 @@ class ExperienceMemoryTests(unittest.TestCase):
         self.assertLessEqual(bias["strength"], 0.38)
 
 
+    def test_recent_room_memory_preserves_agent_lineage_metadata(self):
+        record = {
+            "session_id":"c"*64,
+            "room_code":"ROOM-0003",
+            "room_title":"Spray Child",
+            "agent_profile":"sprayfly",
+            "agent_name":"SPRAYFLY",
+            "spawned_from":"ROOM-0001",
+            "completed_at":"2026-09-14T00:00:00+00:00",
+            "structural_metrics":{"familyCounts":{"scribble":8}},
+            "visual_context":{"style_counts":{"scribble":8}},
+        }
+        memory.record_room_experience(record)
+        recent=memory.visual_bias()["recent_rooms"][-1]
+        self.assertEqual(recent["agent_profile"],"sprayfly")
+        self.assertEqual(recent["agent_name"],"SPRAYFLY")
+        self.assertEqual(recent["spawned_from"],"ROOM-0001")
+
     def test_compact_room_can_rebuild_visual_memory_without_replay(self):
         record = {
             "session_id": "b" * 64,
