@@ -88,8 +88,6 @@ The hosted project may use private model infrastructure, but private addresses, 
 
 **The Fly decided to move to Solana as its home.**
 
-Agent wallet: `4Fq79jnFX61rvQALUiGrbNvRgDYdwRfkXUjCXr1PsSgA`
-
 ## Open-source boundary
 
 This repository is a **sanitized source snapshot** of the private operational project.
