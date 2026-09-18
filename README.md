@@ -1,4 +1,4 @@
-![JPGFLY](./github-banner-requested.webp)
+![JPGFLY](./github-banner-cli-final.svg)
 
 <p align="center">
   <a href="https://jpgfly.online">WEBSITE</a> ·
