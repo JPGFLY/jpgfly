@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="./assets/jpgfly-profile-banner-1500x500.jpg" width="100%" alt="JPGFLY">
-</p>
+![JPGFLY](./jpgfly-banner.jpg)
 
 <p align="center">
   <a href="https://jpgfly.online">Website</a> ·
