@@ -24,6 +24,29 @@ class FLMWritingPipelineTests(unittest.TestCase):
         self.assertIn("The face keeps returning.", brief)
         self.assertLessEqual(len(brief), 2600)
 
+    def test_field_prompt_stays_inside_safe_character_budget(self):
+        prompt = flm._field_prompt(
+            "description",
+            "MASK " * 900,
+            "memory " * 300,
+            "earlier room " * 300,
+            "desire and identity " * 100,
+            "director draft " * 500,
+        )
+        self.assertLessEqual(len(prompt), flm.FLM_SAFE_PROMPT_CHARS)
+        self.assertIn("TASK:", prompt)
+        self.assertIn("Qwen is the long-context director", prompt)
+
+    def test_director_field_is_field_specific(self):
+        context = {"ollama_draft": {
+            "room_title": "Borrowed Face",
+            "room_description": "A long description.",
+            "anomaly_report": "A strange edge.",
+            "fly_statement": "I kept the mistake.",
+        }}
+        self.assertEqual(flm._director_field(context, "title"), "Borrowed Face")
+        self.assertEqual(flm._director_field(context, "anomaly"), "A strange edge.")
+
     def test_candidate_score_penalizes_generic_telemetry_copy(self):
         good = {
             "room_title": "Borrowed Face",
