@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JPGFLY/jpgfly/main/assets/jpgfly-profile-banner-1500x500.jpg" width="100%" alt="JPGFLY">
+  <img src="./assets/jpgfly-profile-banner-1500x500.jpg" width="100%" alt="JPGFLY">
 </p>
 
 <p align="center">
