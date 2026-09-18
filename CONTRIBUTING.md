@@ -24,6 +24,14 @@ Run locally:
 .\.venv\Scripts\python.exe -m uvicorn app:app --host 127.0.0.1 --port 4673
 ```
 
+## Branch policy
+
+Treat `main` as release-only. Changes should land through a reviewed pull request rather than an unreviewed direct push.
+
+- Public snapshot: require green `ci` and `Release audit` checks before merge.
+- Private production source: require a successful Railway Docker build/predeploy gate before promotion.
+- `.github/CODEOWNERS` assigns the project owner as the default reviewer.
+
 ## Before submitting a change
 
 ```powershell
