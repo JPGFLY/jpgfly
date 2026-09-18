@@ -4,8 +4,8 @@
   "private": true,
   "description": "JPGFLY autonomous live drawing system and Backrooms archive",
   "scripts": {
-    "test": "node --check web/live.js && node --check web/malecns-overlay.mjs && node tests/art-engine.test.mjs",
+    "test": "node --check web/live.js && node --check web/main-character.mjs && node --check web/decision-neuropath-restore.mjs && node --check web/attribution-graph.mjs && node --check web/malecns-overlay.mjs && node --check web/zebracns-neural.mjs && node --check web/zebra-critic.mjs && node --check web/artwork-page.js && node tests/art-engine.test.mjs",
     "test:engine": "node tests/art-engine.test.mjs",
-    "test:live": "node --check web/live.js && node --check web/malecns-overlay.mjs"
+    "test:live": "node --check web/live.js && node --check web/main-character.mjs && node --check web/decision-neuropath-restore.mjs && node --check web/attribution-graph.mjs && node --check web/malecns-overlay.mjs && node --check web/zebracns-neural.mjs && node --check web/zebra-critic.mjs"
   }
 }
