@@ -189,7 +189,6 @@ def validate_deployment_environment():
 def _compact_manifest(record,storage_meta):
     compact=json.loads(canonical(record))
     provenance=dict(compact.get("provenance") or {})
-    provenance.pop("agentWallet",None)
     for key in ("completeFlyActionHistory","movementReplayEvents","evaluationCheckpoints"):
         provenance.pop(key,None)
     compact["provenance"]=provenance
@@ -219,14 +218,6 @@ def load_artwork_record(session_id):
         if expected!=hashes["completion"]:return None
     if not _archive_record_visible(record):return None
     public_record=json.loads(canonical(record))
-    public_provenance=dict(public_record.get("provenance") or {})
-    if public_provenance.pop("agentWallet",None) is not None:
-        public_record["provenance"]=public_provenance
-        public_hashes=dict(public_record.get("hashes") or {})
-        if public_provenance:
-            public_hashes["provenance"]=digest(public_provenance)
-            public_hashes["completion"]=digest({"creationId":"0x"+session_id,"state":"COMPLETED","fingerprint":public_hashes.get("fingerprint"),"provenanceHash":public_hashes["provenance"]})
-        public_record["hashes"]=public_hashes
     return public_record
 
 def load_artworks():
