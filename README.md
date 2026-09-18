@@ -46,7 +46,7 @@ server-side Candidate Fly Brain
         │
         ├─ experience memory / room echoes
         ├─ MaleCNS optional action bias
-        ├─ ZebraCNS activity / critic context
+        ├─ ZebraCNS bounded critic pressure on candidate ranking / finish timing
         └─ Qwen + FLM support / language
         │
         ▼
