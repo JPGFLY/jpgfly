@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>JPGFLY / Launch Proof</title>
+<link rel="icon" type="image/png" href="/images/jpgfly-icon-white.png">
+<link rel="stylesheet" href="/assets/launch-proof.css?v=1">
+</head>
+<body>
+<header>
+  <a href="/launch-lab">← LAUNCH LAB</a>
+  <strong>JPGFLY / AUTONOMY RECEIPT</strong>
+</header>
+<main>
+  <section class="hero">
+    <canvas data-jpgfly-main-character data-ink-color="#ffffff"></canvas>
+    <div>
+      <p class="eyebrow">LOCAL CRYPTOGRAPHIC RECEIPT</p>
+      <h1 id="verdict">VERIFYING</h1>
+      <p id="summary">Recomputing the audit chain.</p>
+    </div>
+  </section>
+
+  <section class="checks">
+    <div><span>NO BROWSER CONTROL INPUT</span><strong id="human">—</strong></div>
+    <div><span>OS INPUT UNCHANGED</span><strong id="os-input">—</strong></div>
+    <div><span>GIT SOURCE CLEAN</span><strong id="git-clean">—</strong></div>
+    <div><span>AGENT DECISION</span><strong id="decision">—</strong></div>
+    <div><span>AGENT ACTIVATION</span><strong id="activation">—</strong></div>
+    <div><span>CONFIRMED ONCE</span><strong id="once">—</strong></div>
+  </section>
+
+  <section class="receipt">
+    <div><span>SESSION</span><code id="session">-</code></div>
+    <div><span>GIT COMMIT</span><code id="commit">-</code></div>
+    <div><span>BUILD MANIFEST</span><code id="manifest">-</code></div>
+    <div><span>POLICY HASH</span><code id="policy">-</code></div>
+    <div><span>ART POLICY HASH</span><code id="art-policy">-</code></div>
+    <div><span>FINAL AUDIT HASH</span><code id="final-hash">-</code></div>
+  </section>
+
+  <section class="claim">
+    <strong>WHAT THIS PROVES LOCALLY</strong>
+    <p>The local build recorded one human ARM action, froze the Windows last-input marker, then recorded an agent decision, an agent-only launch activation, and one mock confirmation. A PASS requires no recorded browser control input and an unchanged OS last-input marker through execution. The sentinel captures no input content.</p>
+    <div class="proof-actions">
+      <a href="/api/launch-lab/bundle">EXPORT OFFLINE PROOF BUNDLE</a>
+    </div>
+  </section>
+
+  <section class="errors" id="errors" hidden>
+    <strong>VERIFICATION ERRORS</strong>
+    <ul id="error-list"></ul>
+  </section>
+
+  <section class="events">
+    <div class="events-head"><strong>VERIFIED EVENT CHAIN</strong><span id="event-count">0 EVENTS</span></div>
+    <div id="event-list"></div>
+  </section>
+</main>
+<script type="module" src="/assets/main-character.mjs?v=launch-clean-fly-20260917-1"></script>
+<script type="module" src="/assets/launch-proof.js?v=1"></script>
+</body>
+</html>
