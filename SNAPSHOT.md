@@ -2,7 +2,7 @@
 
 - Source repository: private operational repository (not published)
 - Source ref: `origin/main`
-- Source commit: `a60b619ab01eb51661144c7e404f726e04a02a98`
+- Source commit: `0121cb2da20e718e9ecb48ba3e7150ab5d20c2cf`
 - Snapshot type: sanitized clean-room working-tree export
 - Git history copied: **no**
 - Production secrets copied: **no**
