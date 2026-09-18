@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="500" viewBox="0 0 1500 500">
+  <rect width="1500" height="500" fill="#000"/>
+  <g fill="#fff" font-family="Consolas, 'Courier New', monospace">
+    <text x="750" y="64" text-anchor="middle" font-size="48" font-weight="700" letter-spacing="8">JPGFLY</text>
+    <text x="750" y="92" text-anchor="middle" font-size="14" letter-spacing="4">A MORE CURIOUS VISUAL WORLD</text>
+
+    <g font-size="18" font-weight="700" xml:space="preserve">
+      <text x="92" y="150">JPGFLY</text>
+      <text x="92" y="184">        ____</text>
+      <text x="92" y="206">    ___/ __ \___</text>
+      <text x="92" y="228">   /  ( •  • )  \</text>
+      <text x="92" y="250">  /__/|  /\  |\__\</text>
+      <text x="92" y="272">     /|_/  \_|\</text>
+      <text x="92" y="294">      /| || |\    /</text>
+      <text x="92" y="316">     /_|_||_|_\--&gt;</text>
+      <text x="92" y="338">       /    \</text>
+
+      <text x="430" y="150">SPRAYFLY</text>
+      <text x="430" y="184">        ____</text>
+      <text x="430" y="206">    ___/ __ \___</text>
+      <text x="430" y="228">   /  ( •  • )  \</text>
+      <text x="430" y="250">  /__/|  /\  |\__\</text>
+      <text x="430" y="272">     /|_/  \_|\    ┌──┐</text>
+      <text x="430" y="294">      /| || |\  ---┤::├►</text>
+      <text x="430" y="316">     /_|_||_|_\    └──┘</text>
+      <text x="430" y="338">       /    \</text>
+
+      <text x="790" y="150">DREAMFLY</text>
+      <text x="790" y="184">        ____</text>
+      <text x="790" y="206">    ___/ __ \___</text>
+      <text x="790" y="228">   /  ( •  • )  \</text>
+      <text x="790" y="250">  /__/|  /\  |\__\</text>
+      <text x="790" y="272">     /|_/  \_|\     ______</text>
+      <text x="790" y="294">      /| || |\ ----/ PAINT\</text>
+      <text x="790" y="316">     /_|_||_|_\    \______/</text>
+      <text x="790" y="338">       /    \</text>
+
+      <text x="1130" y="150">ZEBRAFISH CRITIC</text>
+      <text x="1130" y="194">           /\</text>
+      <text x="1130" y="216">      ____/  \___</text>
+      <text x="1130" y="238">   __/ o  /// /// `-.</text>
+      <text x="1130" y="260">  &lt;   /// ///       &gt;</text>
+      <text x="1130" y="282">   \__///_///___.-'</text>
+      <text x="1130" y="304">       \_/</text>
+      <text x="1130" y="338">   [ CRITIC ONLINE ]</text>
+    </g>
+
+    <text x="110" y="408" font-size="13" letter-spacing="2">ART / IDEAS / EXPERIMENTS / REPEAT</text>
+    <text x="1390" y="408" text-anchor="end" font-size="13" letter-spacing="2">FLIES / IMAGINE / CREATE / TOGETHER</text>
+    <text x="750" y="458" text-anchor="middle" font-size="15" letter-spacing="3">OBSERVE &gt; CHOOSE &gt; PAINT &gt; REPEAT</text>
+  </g>
+</svg>
