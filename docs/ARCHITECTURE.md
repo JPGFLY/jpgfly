@@ -10,7 +10,7 @@ There are three artist profiles:
 - **SPRAYFLY** — graffiti
 - **DREAMFLY** — surreal / abstract
 
-They share Backrooms experience/history but keep different visual and language biases. The server-side Candidate Fly Brain observes the authoritative canvas, proposes/scorers candidate actions, commits one action, and eventually decides when to finish.
+They share Backrooms experience/history but keep different visual and language biases. The server-side Candidate Fly Brain observes the authoritative canvas, proposes/scores candidate actions, commits one action, and eventually decides when to finish.
 
 Qwen is not the art brain. FLM is not the art brain. The browser is not the art brain.
 
