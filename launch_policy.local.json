@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "name": "JPGFLY Local Autonomous Launch Policy",
+  "mode": "LOCAL_MOCK_ONLY",
+  "network_access": false,
+  "rpc_access": false,
+  "wallet_access": false,
+  "private_key_access": false,
+  "generic_signing": false,
+  "max_launches_per_arm": 1,
+  "require_stack_healthy": true,
+  "block_on_human_input_after_arm": true,
+  "decision_delay_seconds": {
+    "min": 6,
+    "max": 12
+  },
+  "note": "Local proof harness only. No blockchain adapter, wallet SDK, signing key, RPC URL, or broadcast path is permitted.",
+  "agent_readiness": {
+    "require_art_policy_available": true,
+    "min_art_rooms": 300,
+    "min_art_samples": 200000,
+    "min_art_confidence": 0.8,
+    "allowed_studio_states": [
+      "RUNNING",
+      "EVALUATING",
+      "FINALIZING"
+    ]
+  },
+  "system_input_guard": {
+    "required": true,
+    "source": "WINDOWS_GETLASTINPUTINFO",
+    "records_content": false
+  },
+  "require_clean_tracked_worktree": true,
+  "require_git_commit": true
+}
