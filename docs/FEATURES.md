@@ -46,7 +46,7 @@ Qwen/FLM do not directly choose painting strokes.
 The hosted/private build additionally integrates:
 
 - **MaleCNS v1.0** optional neural bias and sanitized aggregate telemetry
-- **ZebraCNS / ZAPBench** activity context
+- **ZebraCNS / ZAPBench** in-loop critic activity with bounded candidate/finish pressure
 - **Zebra critic**
 - **decision neuropath / attribution graph**
 - live neural/decision firing visualization
