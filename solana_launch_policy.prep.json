@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "name": "JPGFLY Solana Launch Prep Policy",
+  "mode": "SOLANA_MAINNET_PREP",
+  "chain": "solana",
+  "network": "mainnet-beta",
+  "operation": "SOLANA_TOKEN_CREATE_PREP",
+  "execution_enabled": false,
+  "rpc_access": false,
+  "wallet_access": false,
+  "private_key_access": false,
+  "generic_signing": false,
+  "browser_wallet_access": false,
+  "publish_signer_identity": false,
+  "store_private_key": false,
+  "store_seed_phrase": false,
+  "adapter": "UNSET",
+  "allowed_program_ids": [],
+  "max_total_lamports": 0,
+  "max_transactions": 0,
+  "max_launches_per_arm": 1,
+  "note": "Preparation only. This policy cannot contact Solana, access a wallet, sign, spend, or broadcast. Execution requires a separate local signer policy and an explicit adapter review."
+}
