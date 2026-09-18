@@ -6,14 +6,17 @@ from dataclasses import dataclass, field
 from typing import Any
 from pydantic import BaseModel, Field
 from composition_engine import CompositionalDirector
+from zebracns import artistic_zebracns_state
+from art_materials import EXTRA_PALETTE_PRESETS, MATERIAL_BRUSHES, MATERIAL_TECHNIQUES, palette_style
+from subject_catalog import DRAWABLE_ALIAS_BASE, DRAWABLE_PROGRAMS
 
 LOGGER=logging.getLogger("jpgfly.brain")
 
 PALETTE=("#ff3b30","#ff9500","#ffd60a","#32d74b","#00d4ff","#0a84ff","#5e5ce6","#bf5af2","#ff2d8d","#111111")
 BRAIN_VERSION="JPGFLY-BRAIN/5.2-EXPERIENCE-LEARNING"
 STYLES=("sweep","segmented","loop","spiral","curl","jitter","branch","cluster","echo","cross","contour","accent","bold","knot","fracture","orbit","web","coil","petal","lattice","hook","starburst","wave","zigzag","ribbon","vortex","rosette","maze","meander","blob","fan","helix","scallop","scribble")
-BRUSHES=("ink_line","soft_paint","dry_brush","fine_pen","charcoal_grain","wash","stipple","splatter","subtractive")
-TECHNIQUES=("continuous","hatching","cross_hatching","stippling","layered_glazing","overpainting","smudged_dragging","motif_repetition_different_brush","selective_erasure")
+BRUSHES=("ink_line","soft_paint","dry_brush","fine_pen","charcoal_grain","wash","stipple","splatter","subtractive")+MATERIAL_BRUSHES
+TECHNIQUES=("continuous","hatching","cross_hatching","stippling","layered_glazing","overpainting","smudged_dragging","motif_repetition_different_brush","selective_erasure")+MATERIAL_TECHNIQUES
 PHASES=("EXPLORATION","STRUCTURE","DEVELOPMENT","CONTRAST","REFINEMENT","RESOLUTION")
 PHASE_STYLES={
     "EXPLORATION":("sweep","segmented","curl","contour","hook","petal","wave","ribbon","meander","blob","scribble"),
@@ -58,6 +61,7 @@ PALETTE_PRESETS={
     "NIGHT_CANDY":("#171221","#e144a0","#7c5cff","#27b7b2","#de8d35","#92bd47"),
     "MONO_DIRTY":("#111111","#3a3a3a","#66615b","#8a8176","#b06b52"),
 }
+PALETTE_PRESETS.update(EXTRA_PALETTE_PRESETS)
 MOODS=("MISCHIEVOUS","VULGAR","MELANCHOLIC","GROTESQUE","HORNY_STUPID","FUNERAL","PLAYFUL","PARANOID","FERAL","DREAMY","TRASHY","INSECTOID")
 AUTONOMY_GOALS=("WANDER","OBSESS","CONNECT","AMPLIFY","SABOTAGE","JOKE","CALM")
 COMPOSITION_MODES=("SWARM","CENTRAL_ICON","ORBITAL","DIAGONAL_ATTACK","BORDER_CRAWL","CORNER_NEST","TWO_ISLANDS","WEB_FIELD","PANEL_CHAOS","TOTEM")
@@ -187,6 +191,94 @@ SUBJECT_PROGRAMS={
     "COSMIC_ICON":("SUN","MOON","PLANET","COMET","CRESCENT","SPIRAL_PORTAL","TUNNEL","STAR"),
 }
 
+EXTRA_FIGURATIVE_MOTIFS=(
+    "HUMAN_FACE","PROFILE_FACE","FULL_BODY","DANCING_FIGURE","TWO_FIGURES","KISSING_FIGURES",
+    "TORSO","BODY_CURVE","HIPS","LEGS","LIPS","TONGUE","HIGH_HEEL","CORSET","LINGERIE_TOP",
+    "UNDERWEAR","LOVE_HOTEL_SIGN","CENSORED_BODY","HEART_LOCK","ROSE","PERFUME",
+    "COIN","TOKEN_DISK","CANDLE_CHART","ROCKET","BULL_HEAD","BEAR_HEAD","DIAMOND_HAND",
+    "LASER_EYES","MONEY_BAG","RUG","TERMINAL_SCREEN","APE_HEAD","FROG_FACE","WHALE","SHARK",
+    "CAR","CAMERA","GUITAR","SOFA","FRIDGE","TOILET","MIRROR","BANANA","APPLE","MUSHROOM",
+    "TREE","MOUNTAIN","CLOUD","RAIN_CLOUD","WAVE_ICON","CITY_BLOCK","BRIDGE","TOWER"
+)
+FIGURATIVE_MOTIFS=FIGURATIVE_MOTIFS+EXTRA_FIGURATIVE_MOTIFS
+
+MOTIF_THEMES.update({
+    "HUMAN_FACE":("contour","loop","hook"),
+    "PROFILE_FACE":("contour","hook","sweep"),
+    "FULL_BODY":("contour","branch","sweep"),
+    "DANCING_FIGURE":("sweep","branch","meander"),
+    "TWO_FIGURES":("echo","contour","branch"),
+    "KISSING_FIGURES":("contour","echo","loop"),
+    "TORSO":("contour","blob","sweep"),
+    "BODY_CURVE":("sweep","contour","ribbon"),
+    "HIPS":("contour","loop","sweep"),
+    "LEGS":("segmented","sweep","contour"),
+    "LIPS":("contour","loop","scallop"),
+    "TONGUE":("contour","sweep","hook"),
+    "HIGH_HEEL":("contour","hook","segmented"),
+    "CORSET":("contour","lattice","segmented"),
+    "LINGERIE_TOP":("contour","loop","lattice"),
+    "UNDERWEAR":("contour","loop","hook"),
+    "LOVE_HOTEL_SIGN":("lattice","starburst","contour"),
+    "CENSORED_BODY":("contour","cross","bold"),
+    "HEART_LOCK":("loop","hook","segmented"),
+    "ROSE":("petal","spiral","contour"),
+    "PERFUME":("contour","segmented","accent"),
+    "COIN":("orbit","loop","contour"),
+    "TOKEN_DISK":("orbit","segmented","loop"),
+    "CANDLE_CHART":("segmented","lattice","zigzag"),
+    "ROCKET":("segmented","sweep","fan"),
+    "BULL_HEAD":("contour","branch","hook"),
+    "BEAR_HEAD":("contour","loop","hook"),
+    "DIAMOND_HAND":("lattice","contour","branch"),
+    "LASER_EYES":("sweep","accent","starburst"),
+    "MONEY_BAG":("contour","hook","segmented"),
+    "RUG":("fracture","sweep","segmented"),
+    "TERMINAL_SCREEN":("lattice","segmented","maze"),
+    "APE_HEAD":("contour","loop","blob"),
+    "FROG_FACE":("loop","orbit","contour"),
+    "WHALE":("contour","sweep","wave"),
+    "SHARK":("contour","zigzag","sweep"),
+    "CAR":("contour","segmented","orbit"),
+    "CAMERA":("lattice","orbit","segmented"),
+    "GUITAR":("contour","loop","segmented"),
+    "SOFA":("contour","lattice","segmented"),
+    "FRIDGE":("lattice","segmented","contour"),
+    "TOILET":("contour","loop","hook"),
+    "MIRROR":("contour","orbit","lattice"),
+    "BANANA":("curl","hook","sweep"),
+    "APPLE":("contour","loop","hook"),
+    "MUSHROOM":("contour","scallop","segmented"),
+    "TREE":("branch","contour","cluster"),
+    "MOUNTAIN":("zigzag","segmented","sweep"),
+    "CLOUD":("scallop","contour","loop"),
+    "RAIN_CLOUD":("scallop","segmented","branch"),
+    "WAVE_ICON":("wave","sweep","ribbon"),
+    "CITY_BLOCK":("lattice","segmented","maze"),
+    "BRIDGE":("lattice","contour","segmented"),
+    "TOWER":("lattice","segmented","fan"),
+})
+
+SUBJECT_PROGRAMS.update({
+    "PEOPLE_AND_POSES":("HUMAN_FACE","PROFILE_FACE","FULL_BODY","DANCING_FIGURE","TWO_FIGURES","TORSO","BODY_CURVE","HIPS","LEGS"),
+    "AFTER_DARK":("LIPS","TONGUE","HIGH_HEEL","CORSET","LINGERIE_TOP","UNDERWEAR","KISSING_FIGURES","LOVE_HOTEL_SIGN","CENSORED_BODY","HEART_LOCK","ROSE","PERFUME"),
+    "DEGEN_TERMINAL":("COIN","TOKEN_DISK","CANDLE_CHART","ROCKET","BULL_HEAD","BEAR_HEAD","DIAMOND_HAND","LASER_EYES","MONEY_BAG","RUG","TERMINAL_SCREEN","APE_HEAD","FROG_FACE","WHALE","SHARK"),
+    "EVERYDAY_REALITY":("CAR","CAMERA","GUITAR","SOFA","FRIDGE","TOILET","MIRROR","BANANA","APPLE","MUSHROOM","TREE","MOUNTAIN","CLOUD","RAIN_CLOUD","WAVE_ICON","CITY_BLOCK","BRIDGE","TOWER"),
+})
+
+for _alias,_base in DRAWABLE_ALIAS_BASE.items():
+    if _alias not in FIGURATIVE_MOTIFS:
+        FIGURATIVE_MOTIFS=FIGURATIVE_MOTIFS+(_alias,)
+    MOTIF_THEMES[_alias]=MOTIF_THEMES.get(_base,("contour","segmented","sweep"))
+SUBJECT_PROGRAMS.update({name:tuple(items) for name,items in DRAWABLE_PROGRAMS.items()})
+
+CONCRETE_SUBJECT_PROGRAMS=tuple(
+    name for name in SUBJECT_PROGRAMS
+    if name not in {"GEOMETRIC_RITUAL","COSMIC_ICON"}
+)
+ABSTRACT_SUBJECT_PROGRAMS=("GEOMETRIC_RITUAL","COSMIC_ICON")
+CONCRETE_MOTIFS=tuple(dict.fromkeys(tuple(DRAWABLE_ALIAS_BASE)+tuple(m for name in CONCRETE_SUBJECT_PROGRAMS for m in SUBJECT_PROGRAMS[name])))
+
 class BrainRequest(BaseModel): observation:dict[str,Any]
 
 class BrainAction(BaseModel):
@@ -194,10 +286,11 @@ class BrainAction(BaseModel):
     speed:float=Field(ge=0,le=1); duration:int=Field(ge=0,le=2000); brushDown:bool; pressure:float=Field(ge=0,le=1)
     hesitation:int=Field(ge=0,le=1000); exploration:float=Field(ge=0,le=1); attentionTarget:dict[str,Any]
     eraseIntent:bool; movementStyle:str; relationshipToExistingMarks:str; motifReference:dict[str,Any]|None=None
-    color:str="#111111"; confidence:float=Field(ge=0,le=1); reason:str; phase:str; evaluation:dict[str,Any]|None=None
+    color:str=Field(default="#111111",pattern=r"^#[0-9A-Fa-f]{6}$"); confidence:float=Field(ge=0,le=1); reason:str; phase:str; evaluation:dict[str,Any]|None=None
     scale:float=Field(default=1,ge=.15,le=2.5); layerRole:str="PRIMARY"; motifTransform:str="none"
     branchingDepth:int=Field(default=0,ge=0,le=5); strokeCharacter:str="structural"; brushTool:str="ink_line"; technique:str="continuous"; motifHint:str="NONE"; autonomyGoal:str="WANDER"; paletteName:str=""; compositionMode:str="SWARM"; subgoal:str="ADD_COMIC_NOISE"; sceneRelation:str="ISOLATED"
     compositionPass:str="SCOUT"; regionTarget:int=Field(default=-1,ge=-1,le=11); macroIntent:str=""; subjectProgram:str=""
+    materialStyle:str="ink_line"; renderEffect:str="MATTE"; paintDepth:float=Field(default=.08,ge=0,le=1)
 
 @dataclass(frozen=True)
 class BrainLimits:
@@ -276,8 +369,8 @@ class ProceduralFlyBrain:
         self.subgoal=self.rng.choice(SUBGOALS);self.subgoal_hold=self.rng.randint(24,48);self.scene_anchor=self.rng.choice(self.zone_anchors);self.scene_partner=self.rng.choice(self.zone_anchors)
         detail_multiplier={"SPARSE":.62,"BALANCED":.88,"DENSE":1.08,"OBSESSIVE":1.22}[self.detail_mode];self.density=clamp(self.density*detail_multiplier,.1,1)
         mood_palettes={"HORNY_STUPID":("BATHROOM_GRAFFITI","MOLDY_CANDY","TOXIC_NEON","NIGHT_CANDY"),"GROTESQUE":("ASH_AND_BLOOD","MOLDY_CANDY","INSECT_WING","MUDDY_SIGNAL"),"FUNERAL":("FUNERAL_NEON","ASH_AND_BLOOD","MONO_DIRTY"),"PLAYFUL":("MOLDY_CANDY","TOXIC_NEON","BRUISED_PASTEL","COMIC_TRASH"),"MELANCHOLIC":("BRUISED_PASTEL","ASH_AND_BLOOD","MONO_DIRTY"),"TRASHY":("COMIC_TRASH","BATHROOM_GRAFFITI","MUDDY_SIGNAL"),"FERAL":("MUDDY_SIGNAL","ASH_AND_BLOOD","TOXIC_NEON"),"DREAMY":("BRUISED_PASTEL","NIGHT_CANDY","INSECT_WING"),"INSECTOID":("INSECT_WING","TOXIC_NEON","MUDDY_SIGNAL")}
-        base_palette=self.rng.choice(mood_palettes.get(self.mood,tuple(PALETTE_PRESETS)));learned_palette=learned_choice(self.rng,tuple(PALETTE_PRESETS),self.learned_palettes,self.learning_strength,base_palette);self.palette_name=fresh(tuple(PALETTE_PRESETS),self._recent_palettes,learned_palette,.92);self.palette=PALETTE_PRESETS[self.palette_name]
-        learned_subject=learned_choice(self.rng,tuple(SUBJECT_PROGRAMS),self.learned_subjects,self.learning_strength);self.subject_program_name=fresh(tuple(SUBJECT_PROGRAMS),self._recent_subjects,learned_subject,.9);self.subject_program=SUBJECT_PROGRAMS[self.subject_program_name];self.motif_theme=learned_choice(self.rng,self.subject_program,self.learned_motifs,self.learning_strength);self.motif_theme_hold=self.rng.randint(18,34);self.next_intrusion=self.rng.randint(16,30);self.motif_intrusion=False
+        base_palette=self.rng.choice(mood_palettes.get(self.mood,tuple(PALETTE_PRESETS)));learned_palette=learned_choice(self.rng,tuple(PALETTE_PRESETS),self.learned_palettes,self.learning_strength,base_palette);self.palette_name=fresh(tuple(PALETTE_PRESETS),self._recent_palettes,learned_palette,.92);self.palette=PALETTE_PRESETS[self.palette_name];self.visual_style=palette_style(self.palette_name);self.material_style=self.visual_style["material_style"];self.render_effect=self.visual_style["render_effect"];self.paint_depth=self.visual_style["paint_depth"];brush_by_dialect={"ANGULAR":("ink_line","fine_pen","dry_brush"),"ELASTIC":("ink_line","soft_paint","wash"),"MICROGRAPHIC":("fine_pen","ink_line","stipple"),"MONUMENTAL":("dry_brush","charcoal_grain","ink_line"),"BROKEN":("charcoal_grain","dry_brush","fine_pen"),"ORBITAL":("ink_line","soft_paint","wash"),"SCRATCHED":("charcoal_grain","fine_pen","dry_brush")};brush_candidates=list(dict.fromkeys(((self.material_style,) if self.material_style in BRUSHES and self.material_style!="ink_line" else ())+brush_by_dialect.get(self.stroke_dialect,("ink_line","fine_pen","dry_brush"))));brush_count=1 if self.rng.random()<.28 else 2 if self.rng.random()<.86 else 3;self.room_brushes=tuple(brush_candidates[:brush_count]);self.active_brush=self.room_brushes[0];self.brush_switches=0
+        subject_pool=CONCRETE_SUBJECT_PROGRAMS if self.rng.random()<.88 else ABSTRACT_SUBJECT_PROGRAMS;learned_subject=learned_choice(self.rng,subject_pool,self.learned_subjects,self.learning_strength);self.subject_program_name=fresh(subject_pool,self._recent_subjects,learned_subject,.9);self.subject_program=SUBJECT_PROGRAMS[self.subject_program_name];self.motif_theme=learned_choice(self.rng,self.subject_program,self.learned_motifs,self.learning_strength);self.motif_theme_hold=self.rng.randint(10,22);self.next_intrusion=self.rng.randint(10,22);self.motif_intrusion=False
         self.personality={"chaos":.12+self.rng.random()*.5,"order":.42+self.rng.random()*.5,"crowdAvoidance":.52+self.rng.random()*.4,"returnBias":.62+self.rng.random()*.3,"eraseBias":.10+self.rng.random()*.16,"editBias":.42+self.rng.random()*.38,"patience":.68+self.rng.random()*.28,"scaleBias":.28+self.rng.random()*.6,"contrastBias":.42+self.rng.random()*.48}
         self.drives={"curiosity":.45+self.rng.random()*.55,"stubbornness":.25+self.rng.random()*.7,"mischief":.45+self.rng.random()*.55,"novelty":.4+self.rng.random()*.6,"coherence":.25+self.rng.random()*.7}
         self.goal=learned_choice(self.rng,AUTONOMY_GOALS,self.learned_goals,self.learning_strength,"WANDER");self.last_goal=None;self.goal_hold=0;self.boredom=0.0;self.surprise_urge=.25+self.rng.random()*.55;self.palette_shifts=0;self.goal_history=[]
@@ -330,7 +423,7 @@ class ProceduralFlyBrain:
 
     def finish(self,o,limits,reason=""):
         plan=self.current_plan or {"pass":"RESOLVE","target_region":-1,"macro_intent":"RESOLVE:RESOLVE"}
-        return BrainAction(intent="FINISH_ARTWORK",targetDirection=self.heading,movementDistance=0,curvature=0,speed=0,duration=0,brushDown=False,pressure=0,hesitation=0,exploration=0,attentionTarget={"kind":"whole_canvas","point":point(o.get("focalArea"),[400,250])},eraseIntent=False,movementStyle=self.tendency,relationshipToExistingMarks="final_evaluation",color=self.choose_color("RESOLUTION"),confidence=1,reason=reason or "FLY_DECLARED_LAYERED_COMPOSITION_COMPLETE",phase="RESOLUTION",evaluation=self.evaluate(o,limits),scale=1,layerRole="TERTIARY",strokeCharacter="final",motifHint="NONE",autonomyGoal=self.goal,paletteName=self.palette_name,compositionMode=self.composition_mode,subgoal=self.subgoal,sceneRelation=self.scene_relation,compositionPass=plan.get("pass","RESOLVE"),regionTarget=int(plan.get("target_region",-1)),macroIntent=plan.get("macro_intent","RESOLVE:RESOLVE"))
+        return BrainAction(intent="FINISH_ARTWORK",targetDirection=self.heading,movementDistance=0,curvature=0,speed=0,duration=0,brushDown=False,pressure=0,hesitation=0,exploration=0,attentionTarget={"kind":"whole_canvas","point":point(o.get("focalArea"),[400,250])},eraseIntent=False,movementStyle=self.tendency,relationshipToExistingMarks="final_evaluation",color=self.choose_color("RESOLUTION"),confidence=1,reason=reason or "FLY_DECLARED_LAYERED_COMPOSITION_COMPLETE",phase="RESOLUTION",evaluation=self.evaluate(o,limits),scale=1,layerRole="TERTIARY",strokeCharacter="final",motifHint="NONE",autonomyGoal=self.goal,paletteName=self.palette_name,compositionMode=self.composition_mode,subgoal=self.subgoal,sceneRelation=self.scene_relation,compositionPass=plan.get("pass","RESOLVE"),regionTarget=int(plan.get("target_region",-1)),macroIntent=plan.get("macro_intent","RESOLVE:RESOLVE"),materialStyle=self.material_style,renderEffect=self.render_effect,paintDepth=self.paint_depth)
 
     def hard_limit(self,o,l):
         if int(o.get("elapsedDrawingTime",0))>=l.max_session_duration_ms:return "SAFETY_MAX_SESSION_DURATION"
@@ -371,7 +464,7 @@ class ProceduralFlyBrain:
         if self.rng.random()>=chance:return
         choices=[name for name in PALETTE_PRESETS if name!=self.palette_name]
         if not choices:return
-        self.palette_name=self.rng.choice(choices);self.palette=PALETTE_PRESETS[self.palette_name];self.palette_shifts+=1
+        self.palette_name=self.rng.choice(choices);self.palette=PALETTE_PRESETS[self.palette_name];self.visual_style=palette_style(self.palette_name);self.material_style=self.visual_style["material_style"];self.render_effect=self.visual_style["render_effect"];self.paint_depth=self.visual_style["paint_depth"];self.palette_shifts+=1
         self.surprise_urge=clamp(self.surprise_urge-.22,0,1)
 
     def update_autonomy(self,phase,o,evaluation=None):
@@ -446,7 +539,7 @@ class ProceduralFlyBrain:
             elif self.grotesque_level>.62 and self.rng.random()<self.grotesque_level:self.motif_theme=self.rng.choice(grotesque)
             elif self.content_register=="ABSURD" and self.humor_level>.55 and self.rng.random()<self.humor_level*.55:self.motif_theme=self.rng.choice(comic)
             else:
-                pool=self.subject_program if self.rng.random()<.72 else tuple(MOTIF_THEMES)
+                _roll=self.rng.random();pool=self.subject_program if _roll<.54 else CONCRETE_MOTIFS if _roll<.90 else tuple(MOTIF_THEMES)
                 self.motif_theme=learned_choice(self.rng,pool,self.learned_motifs,self.learning_strength)
             self.motif_theme_hold=self.rng.randint(14,28)
         return self.motif_theme
@@ -591,39 +684,53 @@ class ProceduralFlyBrain:
         return self.rng.choice((f"Sharpen the edge with a small {style}.",f"Leave a {style} where the rhythm weakens.",f"Complicate the resolution with one last {style}."))
 
     def choose_brush_technique(self,phase,style,relation,transform,o,erase,motif):
-        """Choose the physical tool from the fly's current artistic intent and observed canvas."""
-        if erase:return "subtractive","selective_erasure"
-        plan_pass=(self.current_plan or {}).get("pass","")
-        if plan_pass=="BLOCK_IN":return "dry_brush","overpainting"
-        if plan_pass=="PRIMARY_FORMS":return ("dry_brush","overpainting") if style in ("bold","sweep","branch","web") else ("ink_line","continuous")
-        if plan_pass=="SECONDARY_RHYTHMS":
-            if style in ("segmented","lattice"):return "fine_pen","cross_hatching"
-            if style in ("cluster","starburst"):return "stipple","stippling"
-            return ("soft_paint","layered_glazing") if style in ("loop","spiral","orbit","coil","petal") else ("fine_pen","hatching")
-        if plan_pass=="INTERRUPT":
-            if style in ("cluster","starburst"):return "splatter","stippling"
-            return "charcoal_grain","smudged_dragging"
-        if plan_pass=="RETURN":return ("fine_pen","hatching") if style in ("contour","echo","hook") else ("soft_paint","layered_glazing")
-        if plan_pass=="EDIT":
-            if style in ("segmented","lattice","cross"):return "fine_pen","cross_hatching"
-            return "fine_pen","hatching"
-        if plan_pass=="RESOLVE":return "fine_pen","continuous"
-        if style in ("cluster","starburst"):return ("splatter","stippling") if phase in ("CONTRAST","DEVELOPMENT") else ("stipple","stippling")
-        if style in ("segmented","lattice"):return ("fine_pen","cross_hatching") if float(o.get("localDensity",0))>.5 else ("ink_line","hatching")
-        if style in ("jitter","fracture"):return "charcoal_grain","smudged_dragging"
-        if style in ("bold","web"):return ("dry_brush","overpainting") if phase=="STRUCTURE" else ("charcoal_grain","cross_hatching")
-        if style in ("loop","spiral","coil","orbit","petal"):return ("soft_paint","layered_glazing") if phase in ("DEVELOPMENT","REFINEMENT") else ("ink_line","continuous")
-        if phase=="EXPLORATION":tool,technique="ink_line","continuous"
-        elif phase=="STRUCTURE":tool,technique="dry_brush","overpainting"
-        elif phase=="DEVELOPMENT":tool,technique="soft_paint","layered_glazing"
-        elif phase=="CONTRAST":tool,technique="charcoal_grain","smudged_dragging"
-        elif phase=="REFINEMENT":tool,technique="fine_pen","hatching"
-        else:tool,technique="wash","layered_glazing"
-        if motif and transform in ("repeat","loose_mirror","shrink","enlarge"):
-            previous=motif.get("brushTool")
-            alternatives=[candidate for candidate in ("fine_pen","dry_brush","wash","stipple","soft_paint") if candidate!=previous]
-            tool=alternatives[(self.decision_count+len(style))%len(alternatives)];technique="motif_repetition_different_brush"
-        return tool,technique
+        """Use a small coherent tool palette. A room may legitimately use one brush throughout."""
+        if erase:
+            return "subtractive","selective_erasure"
+
+        technique_for={
+            "ink_line":"continuous",
+            "fine_pen":"hatching" if style in ("segmented","lattice","cross","contour","echo","hook") else "continuous",
+            "dry_brush":"overpainting",
+            "soft_paint":"layered_glazing",
+            "charcoal_grain":"smudged_dragging",
+            "wash":"layered_glazing",
+            "stipple":"stippling",
+            "splatter":"stippling",
+            "neon_glow":"neon_bloom",
+            "impasto_heavy":"impasto_ridge",
+            "oil_lump":"impasto_ridge",
+            "chrome_ribbon":"chrome_layer",
+            "airbrush_fog":"airbrush_bloom",
+            "marker_bleed":"ink_bleed",
+        }
+
+        allowed=tuple(getattr(self,"room_brushes",()) or ("ink_line",))
+        active=str(getattr(self,"active_brush",allowed[0]) or allowed[0])
+        if active not in allowed:
+            active=allowed[0]
+
+        # A switch is a compositional event, not a phase requirement. Most rooms
+        # keep the same tool; rooms with 2-3 tools can switch sparingly.
+        switch_pressure=0.0
+        if phase=="CONTRAST":
+            switch_pressure=.10
+        elif phase=="REFINEMENT":
+            switch_pressure=.055
+        elif transform in ("interrupt","cross"):
+            switch_pressure=.04
+        if getattr(self,"goal","")=="SABOTAGE":
+            switch_pressure+=.035
+
+        max_switches=max(0,min(2,len(allowed)-1))
+        if max_switches and self.brush_switches<max_switches and self.rng.random()<switch_pressure:
+            alternatives=[brush for brush in allowed if brush!=active]
+            if alternatives:
+                active=self.rng.choice(alternatives)
+                self.active_brush=active
+                self.brush_switches+=1
+
+        return active,technique_for.get(active,"continuous")
 
     def decide(self,request,limits):
         o=request.observation;hard=self.hard_limit(o,limits)
@@ -735,7 +842,7 @@ class ProceduralFlyBrain:
         profile_multiplier={"QUICK":.82,"STANDARD":1.0,"LONG":1.08,"OBSESSIVE":1.14}[self.duration_profile]
         action_duration=round((180+movement*(3.2-self.rng.random()*.7))*tempo_multiplier*profile_multiplier)
         hesitation_base=(70 if phase in ("REFINEMENT","RESOLUTION") else 42)*tempo_multiplier
-        action=BrainAction(intent="MOVE",targetDirection=round(self.heading,3),movementDistance=round(movement,3),curvature=round(curvature,3),speed=round(.42+self.rng.random()*.38,3),duration=action_duration,brushDown=brush,pressure=round(pressure,3),hesitation=round(12+self.rng.random()*hesitation_base),exploration=.92 if seek_empty else round(.18+self.rng.random()*.64,3),attentionTarget={"kind":"negative_space" if seek_empty else "motif" if motif else "director_region" if relation=="director_region_build" else "structural_anchor","point":[round(v,3) for v in target]},eraseIntent=erase,movementStyle=style,relationshipToExistingMarks="selective_erase" if erase else relation,motifReference={k:motif[k] for k in ("decision","style","point","scale","brushTool","technique") if k in motif} if motif else None,color=self.choose_color(phase),confidence=round(.58+self.rng.random()*.4,3),reason=public_reason,phase=phase,evaluation=evaluation,scale=round(scale,3),layerRole=layer,motifTransform=transform,branchingDepth=depth,strokeCharacter=character,brushTool=brush_tool,technique=technique,motifHint=self.motif_theme,autonomyGoal=self.goal,paletteName=self.palette_name,compositionMode=self.composition_mode,subgoal=self.subgoal,sceneRelation=self.scene_relation,compositionPass=plan.get("pass","SCOUT_MAP"),regionTarget=int(plan.get("target_region",-1)),macroIntent=plan.get("macro_intent",""),subjectProgram=self.subject_program_name)
+        action=BrainAction(intent="MOVE",targetDirection=round(self.heading,3),movementDistance=round(movement,3),curvature=round(curvature,3),speed=round(.42+self.rng.random()*.38,3),duration=action_duration,brushDown=brush,pressure=round(pressure,3),hesitation=round(12+self.rng.random()*hesitation_base),exploration=.92 if seek_empty else round(.18+self.rng.random()*.64,3),attentionTarget={"kind":"negative_space" if seek_empty else "motif" if motif else "director_region" if relation=="director_region_build" else "structural_anchor","point":[round(v,3) for v in target]},eraseIntent=erase,movementStyle=style,relationshipToExistingMarks="selective_erase" if erase else relation,motifReference={k:motif[k] for k in ("decision","style","point","scale","brushTool","technique") if k in motif} if motif else None,color=self.choose_color(phase),confidence=round(.58+self.rng.random()*.4,3),reason=public_reason,phase=phase,evaluation=evaluation,scale=round(scale,3),layerRole=layer,motifTransform=transform,branchingDepth=depth,strokeCharacter=character,brushTool=brush_tool,technique=technique,motifHint=self.motif_theme,autonomyGoal=self.goal,paletteName=self.palette_name,compositionMode=self.composition_mode,subgoal=self.subgoal,sceneRelation=self.scene_relation,compositionPass=plan.get("pass","SCOUT_MAP"),regionTarget=int(plan.get("target_region",-1)),macroIntent=plan.get("macro_intent",""),subjectProgram=self.subject_program_name,materialStyle=self.material_style,renderEffect=self.render_effect,paintDepth=self.paint_depth)
         self.style_counts[style]=self.style_counts.get(style,0)+1;self.tendency=style;self.gesture_remaining=max(0,self.gesture_remaining-1)
         self.motifs.append({"decision":self.decision_count,"style":style,"point":pos[:],"heading":self.heading,"scale":scale,"curvature":curvature,"brushTool":brush_tool,"technique":technique,"interest":.45+self.rng.random()*.45});self.motifs=self.motifs[-48:];self.last_observation=json.loads(json.dumps(o));return action
 
@@ -782,7 +889,7 @@ class ComplexArtController:
         self.composition=str(getattr(fallback,"composition_mode","SWARM"))
         self.archetype=str(getattr(fallback,"archetype","TENSION_FIELD"))
         dialect=str(getattr(fallback,"stroke_dialect","ANGULAR"))
-        self.materials=COMPLEX_ART_MATERIALS.get(dialect,("ink_line","charcoal_grain","dry_brush"))
+        self.materials=tuple(getattr(fallback,"room_brushes",()) or COMPLEX_ART_MATERIALS.get(dialect,("ink_line","charcoal_grain")))[:3]
         desired=int(getattr(fallback,"desired_decisions",520) or 520)
         lo=int(os.environ.get("JPGFLY_COMPLEX_ART_TARGET_MIN","140"));hi=int(os.environ.get("JPGFLY_COMPLEX_ART_TARGET_MAX","220"))
         self.target=max(120,min(hi,max(lo,desired)))
@@ -807,24 +914,23 @@ class ComplexArtController:
     def critique(self,o,n):
         occupancy=clamp(float(o.get("canvasOccupancy",0) or 0),0,1);direction=1-clamp(float(o.get("directionalUniformity",.5) or .5),0,1)
         contrast=clamp(float(o.get("densityContrast",0) or 0),0,1);repetition=clamp(float(o.get("repetition",0) or 0),0,1);meaningful=clamp(float(o.get("meaningfulChangeRate",.7) or .7),0,1)
-        occ_fit=1-min(1,abs(occupancy-self.density_target)/max(.18,self.density_target));motif_var=min(1,len([k for k in self.motifs if k!="NONE"])/3);brush_var=min(1,len(self.brushes)/4);scale_var=min(1,len(self.scales)/3)
-        score=clamp(occ_fit*.22+direction*.16+contrast*.15+meaningful*.14+motif_var*.12+brush_var*.10+scale_var*.11-max(0,repetition-.55)*.18,0,1)
+        occ_fit=1-min(1,abs(occupancy-self.density_target)/max(.18,self.density_target));motif_var=min(1,len([k for k in self.motifs if k!="NONE"])/3);scale_var=min(1,len(self.scales)/3);brush_total=sum(self.brushes.values()) or 1;brush_coherence=(max(self.brushes.values())/brush_total) if self.brushes else 1.0
+        score=clamp(occ_fit*.24+direction*.17+contrast*.16+meaningful*.15+motif_var*.12+brush_coherence*.08+scale_var*.08-max(0,repetition-.55)*.18,0,1)
         needs=[]
         if occupancy<self.density_target*.62:needs.append("build larger connected primary masses")
         if direction<.38:needs.append("add a clear counter-direction")
         if contrast<.14 and n>80:needs.append("increase dense-versus-quiet contrast")
         if repetition>.58:needs.append("transform or interrupt the repeated rhythm")
-        if brush_var<.5 and n>70:needs.append("change material family")
         if scale_var<.67 and n>80:needs.append("increase macro/micro scale contrast")
         if motif_var<.67 and n>100:needs.append("develop a secondary motif")
         if not needs:needs.append("deepen the existing structure; do not add unrelated icons")
         stage,_,progress=self.stage(n)
-        allowed=progress>=.88 and score>=float(os.environ.get("JPGFLY_COMPLEX_ART_MIN_SCORE",".60")) and occupancy>=.22 and len(self.brushes)>=3 and len(self.scales)>=2 and repetition<=.74
+        allowed=progress>=.88 and score>=float(os.environ.get("JPGFLY_COMPLEX_ART_MIN_SCORE",".60")) and occupancy>=.22 and len(self.scales)>=2 and repetition<=.74
         self.last_critique={"score":round(score,3),"stage":stage,"progress":round(progress,3),"finish_allowed":allowed,"needs":needs[:3]};return self.last_critique
 
     def prompt_fragment(self,o,n):
         stage,goal,progress=self.stage(n);critic=self.critique(o,n)
-        payload={"mode":"COMPLEX_ART","thesis":self.thesis,"stage":stage,"goal":goal,"progress":round(progress,3),"primary":self.primary,"secondary":self.secondary,"materials":self.materials,"palette":self.palette,"history":{"moves":self.actions,"motifs":self.motifs.most_common(5),"brushes":self.brushes.most_common(5),"scales":dict(self.scales)},"critic":critic,"rules":["build one coherent artwork, not unrelated doodles","connect or echo isolated icons later","revisit and transform earlier motifs","use macro/micro scale contrast","preserve at least one quiet negative-space region","scribble/jitter/blob may interrupt but cannot dominate"]}
+        payload={"mode":"COMPLEX_ART","thesis":self.thesis,"stage":stage,"goal":goal,"progress":round(progress,3),"primary":self.primary,"secondary":self.secondary,"materials":self.materials,"palette":self.palette,"history":{"moves":self.actions,"motifs":self.motifs.most_common(5),"brushes":self.brushes.most_common(5),"scales":dict(self.scales)},"critic":critic,"rules":["build one coherent artwork, not unrelated doodles","a strong artwork may use one brush throughout; do not collect tools","switch brush only when the composition genuinely needs a material contrast","connect or echo isolated icons later","revisit and transform earlier motifs","use macro/micro scale contrast","preserve at least one quiet negative-space region","scribble/jitter/blob may interrupt but cannot dominate"]}
         return " COMPLEX ART MODE is authoritative. Follow this session plan: "+json.dumps(payload,separators=(",",":"))
 
     def least_style(self,stage):return min(COMPLEX_ART_STAGE_STYLES.get(stage,("contour","branch")),key=lambda x:self.styles.get(x,0))
@@ -864,9 +970,18 @@ class ComplexArtController:
         style=str(getattr(a,"movementStyle","") or "")
         if style in COMPLEX_ART_DOODLY and sum(x in COMPLEX_ART_DOODLY for x in self.recent_styles)>=4:a.movementStyle=self.least_style(stage);a.relationshipToExistingMarks="complex_art_restore_structural_hierarchy"
         brush=str(getattr(a,"brushTool","") or "")
-        if brush and len(self.recent_brushes)>=6 and all(x==brush for x in list(self.recent_brushes)[-6:]):
-            alt=next((x for x in self.materials if x!=brush),None)
-            if alt:a.brushTool=alt;a.technique="motif_repetition_different_brush"
+        if self.materials:
+            # Keep Qwen inside the room's intentionally small tool palette.
+            if brush not in self.materials:
+                used_allowed=[(self.brushes.get(candidate,0),candidate) for candidate in self.materials]
+                a.brushTool=max(used_allowed)[1] if any(count for count,_ in used_allowed) else self.materials[0]
+                a.technique={
+                    "ink_line":"continuous","fine_pen":"hatching","dry_brush":"overpainting",
+                    "soft_paint":"layered_glazing","charcoal_grain":"smudged_dragging",
+                    "wash":"layered_glazing","stipple":"stippling","splatter":"stippling",
+                    "neon_glow":"neon_bloom","impasto_heavy":"impasto_ridge","oil_lump":"impasto_ridge",
+                    "chrome_ribbon":"chrome_layer","airbrush_fog":"airbrush_bloom","marker_bleed":"ink_bleed",
+                }.get(a.brushTool,"continuous")
         motif=str(getattr(a,"motifHint","") or "")
         if (not motif or motif=="NONE") and stage not in ("MAP_FIELD","RESOLVE") and self.actions%5==0:a.motifHint=self.least_motif()
         elif motif!="NONE" and len(self.recent_motifs)>=9 and all(x==motif for x in list(self.recent_motifs)[-9:]):a.motifHint=self.least_motif();a.motifTransform="distort"
@@ -903,10 +1018,13 @@ class OllamaFlyBrain:
             self.malecns_url=self.url[:-7]+"/malecns"
         else:
             self.malecns_url="http://127.0.0.1:4690"
-        self.malecns_timeout=max(2,min(30,int(os.environ.get("JPGFLY_MALECNS_TIMEOUT","12"))))
+        self.malecns_timeout=max(1,min(12,int(os.environ.get("JPGFLY_MALECNS_TIMEOUT","4"))))
         self.malecns_strength=clamp(float(os.environ.get("JPGFLY_MALECNS_STRENGTH",".22")),0,.55)
+        self.malecns_retry_seconds=max(2,min(60,int(os.environ.get("JPGFLY_MALECNS_RETRY_SECONDS","10"))))
+        self.malecns_retry_at=0.0;self.malecns_log_at=0.0
         self.last_malecns_bias={}
-        self.model=os.environ.get("JPGFLY_OLLAMA_MODEL","qwen3:8b").strip() or "qwen3:8b"
+        self.last_zebracns_state={}
+        self.model=os.environ.get("JPGFLY_OLLAMA_MODEL","qwen3-vl:8b-instruct-q4_K_M").strip() or "qwen3-vl:8b-instruct-q4_K_M"
         self.timeout=max(8,min(120,int(os.environ.get("JPGFLY_OLLAMA_BRAIN_TIMEOUT","60"))))
         self.retry_seconds=max(2,min(300,int(os.environ.get("JPGFLY_OLLAMA_RETRY_SECONDS","3"))))
         self.retry_at=0.0
@@ -920,9 +1038,24 @@ class OllamaFlyBrain:
         return self.fallback.decide(request,limits)
 
     def context_snapshot(self):
-        return self.complex_art.snapshot() if self.complex_art else {}
+        snapshot=self.complex_art.snapshot() if self.complex_art else {}
+        state=self.last_zebracns_state if isinstance(self.last_zebracns_state,dict) else {}
+        if state:
+            signals=state.get("signals") if isinstance(state.get("signals"),dict) else {}
+            snapshot["zebracns"]={
+                "dataset":str(state.get("dataset") or "")[:120],
+                "frame":int(state.get("frame",0) or 0),
+                "action":str(state.get("action") or "NONE")[:24],
+                "signals":{
+                    key:round(clamp(float(signals.get(key,0) or 0),0,1),4)
+                    for key in ("arousal","persistence","novelty_seek","attention_lock","escape_drive","repetition_drive","state_instability","completion_pressure","tempo")
+                },
+            }
+        return snapshot
 
     def _malecns_bias(self,observation,action):
+        now=time.monotonic()
+        if now<self.malecns_retry_at:return {}
         try:
             focus=observation.get("focalArea") or observation.get("currentForelegPosition") or [400,250]
             if isinstance(focus,dict):
@@ -959,10 +1092,12 @@ class OllamaFlyBrain:
             bias=result.get("bias") or {}
             if not isinstance(bias,dict):
                 return {}
-            self.last_malecns_bias=bias
+            self.last_malecns_bias=bias;self.malecns_retry_at=0.0
             return bias
         except Exception as exc:
-            LOGGER.warning("MaleCNS bias unavailable: %s: %s",type(exc).__name__,str(exc)[:180])
+            now=time.monotonic();self.malecns_retry_at=now+self.malecns_retry_seconds
+            if now>=self.malecns_log_at:
+                LOGGER.warning("MaleCNS bias unavailable: %s: %s",type(exc).__name__,str(exc)[:180]);self.malecns_log_at=now+15.0
             self.last_malecns_bias={}
             return {}
 
@@ -1001,12 +1136,27 @@ class OllamaFlyBrain:
             return self._dumb_dumb(request,limits)
 
         complex_prompt=self.complex_art.prompt_fragment(request.observation,self.fallback.decision_count) if self.complex_art else ""
+        zebra_state=artistic_zebracns_state()
+        self.last_zebracns_state=zebra_state
+        zebra_prompt=""
+        if zebra_state:
+            signals=zebra_state.get("signals") if isinstance(zebra_state.get("signals"),dict) else {}
+            strategic={
+                key:round(clamp(float(signals.get(key,0) or 0),0,1),3)
+                for key in ("arousal","persistence","novelty_seek","attention_lock","escape_drive","repetition_drive","state_instability","completion_pressure","tempo")
+            }
+            zebra_prompt=(
+                " ZEBRACNS GLOBAL STATE is a high-level strategic bias derived from real zebrafish activity. "
+                "Use it only when choosing tendencies such as explore, revisit, connect, contradict, escape, or resolve. "
+                "Do NOT translate ZebraCNS directly into targetDirection, pressure, movementDistance, scale, or other motor fields; "
+                "MaleCNS owns physical motor perturbation. State: "+json.dumps(strategic,separators=(",",":"))
+            )
         action_schema=BrainAction.model_json_schema()
         prompt=(
             "You are the fly. Return one JSON foreleg action only; never points, paths, or a whole composition. "
             "Use phase, layer, motif transformation, scale and mark family deliberately. "
             "Keep reason and relationship strings very short."
-            +complex_prompt+
+            +complex_prompt+zebra_prompt+
             " Observation: "+json.dumps(request.observation,separators=(",",":"))
         )
         try:
@@ -1050,7 +1200,7 @@ class OllamaFlyBrain:
                 qwen_ms,malecns_ms,qwen_ms+malecns_ms,
             )
             self.retry_at=0.0
-            self.mode=("QWEN VISUAL BRAIN · COMPLEX ART" if self.complex_art else "QWEN VISUAL BRAIN · ONLINE")+(" · MALECNS" if malecns_bias else "")
+            self.mode=("QWEN VISUAL BRAIN · COMPLEX ART" if self.complex_art else "QWEN VISUAL BRAIN · ONLINE")+(" · ZEBRACNS" if zebra_state else "")+(" · MALECNS" if malecns_bias else "")
             self.fallback.decision_count+=1
             return action
         except urllib.error.HTTPError as exc:
