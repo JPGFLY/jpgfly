@@ -43,7 +43,7 @@ Qwen/FLM do not directly choose painting strokes.
 
 ## Neural and live UI
 
-The hosted/private build additionally integrates:
+The current public snapshot includes:
 
 - **MaleCNS v1.0** optional neural bias and sanitized aggregate telemetry
 - **ZebraCNS / ZAPBench** in-loop critic activity with bounded candidate/finish pressure
@@ -92,20 +92,22 @@ The source includes or documents:
 - security/privacy regression testing
 - fail-closed deployment checks
 
-## Hosted/private-build capabilities documented at a high level
+## Public safety / launch-preparation layer
 
-The operational repository also contains features intentionally not fully exported into this sanitized snapshot:
+The public snapshot includes:
 
 - composition-vision teacher
-- learned art-policy network and training
+- learned room-derived art policy
 - expanded subject catalog and material systems
-- advanced neural overlays/critic
+- neural overlays and Zebra critic UI
 - local-only Launch Lab + independent launch-proof verifier
 - fail-closed Solana launch-intent/readiness/signer guards
-- production node restart/health tooling
-- additional deployment/security audit tooling
 
-The public snapshot documents these boundaries without publishing private production wiring.
+These launch components are preparation and verification code. Default policies do not enable RPC access, key access, signing, broadcast, transaction count, or spend authority.
+
+## Production-only boundary
+
+Private production routing, tunnel configuration, credentials, node restart/health tooling, deployment metadata, and operator-specific security automation remain outside the public repository.
 
 ## Network direction
 
