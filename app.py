@@ -1,21 +1,30 @@
 """JPGFLY autonomous fly drawing system and Backrooms-style archive."""
 from __future__ import annotations
 
-import asyncio, base64, functools, gzip, hashlib, json, logging, math, os, random, re, secrets, time, threading, urllib.request
+import asyncio, base64, functools, gzip, hashlib, html, json, logging, math, os, random, re, secrets, socket, time, threading, urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
+from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field
 
 from candidate_brain import BRAIN_VERSION, BrainLimits, BrainRequest, configured_brain_mode, create_fly_brain
+from composition_vision import analyze_composition
 from brain_provider import ProceduralFlyBrain
-from server_mechanics import ServerCanvasMechanics, FIGURE_MOTIFS
+from server_mechanics import ServerCanvasMechanics, FIGURE_MOTIFS, brush_profile
 from flm_text_provider import configured_text_provider, generate_room_text, generate_room_fallback, generate_live_text
 from studio_delta import install_studio_delta
-from narrative_provider import narrative_mode, generate_live_comment, generate_room_record
+from narrative_provider import narrative_mode, generate_live_comment, generate_room_record, generate_zebra_room_critique, clean_public_text
+from room_theme import choose_room_theme
 from experience_memory import record_room_experience
+from art_policy import train_from_decisions as train_art_policy_from_decisions, get_art_policy
+from zebracns import public_zebracns_state
+from launch_lab import LaunchLabManager, LaunchLabError
+from subject_catalog import drawable_catalog
+from local_input_guard import local_input_snapshot
+from agent_profiles import AGENT_PROFILES, AGENT_ROTATION, get_agent_profile, normalize_agent_profile, public_agent_profiles
 
 ROOT=Path(__file__).resolve().parent; WEB=ROOT/"web"
 SESSION_STATES=("CREATED","RUNNING","EVALUATING","FINALIZING","COMPLETED")
@@ -23,17 +32,18 @@ SESSIONS:dict[str,dict[str,Any]]={}
 ARTWORKS:dict[str,dict[str,Any]]={}
 ROOM_LOCK=threading.Lock(); FINALIZE_LOCK=threading.Lock(); NEXT_ROOM_NUMBER=1
 CURRENT_STUDIO_ID:str|None=None
-MALECNS_PUBLIC_STATE={"value":None,"fresh_until":0.0,"retry_after":0.0,"log_after":0.0,"lock":threading.Lock()}
-MALECNS_PUBLIC_NETWORK={"value":None,"fresh_until":0.0,"retry_after":0.0,"log_after":0.0,"lock":threading.Lock()}
 STUDIO_PROGRESS_AT=time.monotonic()
 STUDIO_PROGRESS_WALL=datetime.now(timezone.utc).isoformat()
 MAX_ACTIVE_SESSIONS=128; SESSION_TTL_SECONDS=21600; MAX_REQUEST_BYTES=8*1024*1024
-BUILD_ID="BACKROOMS-THEME-DURATION-VARIATION-2026-09-13-41"
+BUILD_ID="ROOM-BORN-AGENTS-PRELAUNCH-2026-09-17-02"
 PUBLIC_LAUNCH_ID="20260913-0218"
 TIME_STANDARD="UTC"
 LOGGER=logging.getLogger("jpgfly")
 CONTROL_METHODS={"POST","PUT","PATCH","DELETE"}
 app=FastAPI(title="JPGFLY Backrooms",docs_url=None,redoc_url=None)
+app.add_middleware(GZipMiddleware,minimum_size=1024,compresslevel=5)
+_MALE_PUBLIC_STATE={"value":None,"fresh_until":0.0,"retry_after":0.0,"log_after":0.0,"lock":threading.Lock()}
+_MALE_PUBLIC_NETWORK={"value":None,"fresh_until":0.0,"retry_after":0.0,"log_after":0.0,"lock":threading.Lock()}
 
 
 def _is_loopback(host:str) -> bool:
@@ -62,14 +72,16 @@ async def harden_http(request:Request,call_next):
     response.headers["X-Content-Type-Options"]="nosniff"
     response.headers["X-Frame-Options"]="DENY"
     response.headers["Referrer-Policy"]="no-referrer"
-    response.headers["Permissions-Policy"]="camera=(), microphone=(), geolocation=()"
+    response.headers["Permissions-Policy"]="camera=(), microphone=(), geolocation=(), accelerometer=(), gyroscope=(), magnetometer=(), payment=(), usb=(), browsing-topics=()"
     response.headers["Cross-Origin-Opener-Policy"]="same-origin"
     response.headers["Cross-Origin-Resource-Policy"]="same-origin"
     response.headers["X-Permitted-Cross-Domain-Policies"]="none"
-    response.headers["Content-Security-Policy"]="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+    response.headers["X-DNS-Prefetch-Control"]="off"
+    response.headers["Origin-Agent-Cluster"]="?1"
+    response.headers["Content-Security-Policy"]="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
     if request.url.path.startswith("/api/"):
         response.headers.setdefault("Cache-Control","no-store")
-    if os.environ.get("JPGFLY_HTTPS_ONLY","").lower()=="true":
+    if public_deployment_mode() or os.environ.get("JPGFLY_HTTPS_ONLY","").lower()=="true":
         response.headers["Strict-Transport-Security"]="max-age=31536000; includeSubDomains"
     return response
 
@@ -94,6 +106,7 @@ class StartRequest(BaseModel):
     complexity:float=Field(default=.96,ge=.1,le=1)
     mutation:float=Field(default=.42,ge=0,le=1)
     density:float=Field(default=.64,ge=.1,le=1)
+    agent_profile:str=Field(default="jpgfly",min_length=1,max_length=24)
     limits:dict[str,int]|None=None
 
 class DecisionRequest(BaseModel):
@@ -102,6 +115,9 @@ class DecisionRequest(BaseModel):
 
 class FinalizeRequest(BaseModel):
     client_fingerprint:str=Field(default="",max_length=128)
+
+class LaunchHumanInputRequest(BaseModel):
+    kind:str=Field(default="unknown",min_length=1,max_length=48)
 
 def canonical(value):return json.dumps(value,sort_keys=True,separators=(",",":"),ensure_ascii=False)
 def mark_studio_progress():
@@ -122,11 +138,73 @@ def active_session_summary(session):
         "duration":int(session.get("duration",0) or 0),
         "completion_reason":session.get("completion_reason"),
         "public_commentary":list(session.get("public_commentary") or [])[-12:],
+        "vision_composition":dict(session.get("_vision_composition") or {}),
+        "agent_profile":session.get("agent_profile","jpgfly"),
+        "agent_name":session.get("agent_name","JPGFLY"),
+        "agent_lore":session.get("agent_lore",""),
+        "agent_echo_rule":session.get("agent_echo_rule",""),
+        "spawned_from":session.get("spawned_from"),
+        "room_echoes":list(session.get("room_echoes") or [])[:4],
     }
 
 def data_root():
     configured=os.environ.get("JPGFLY_DATA_DIR","").strip() or os.environ.get("RAILWAY_VOLUME_MOUNT_PATH","").strip()
     return Path(configured).expanduser().resolve() if configured else ROOT/".jpgfly"
+
+_LAUNCH_LAB_MANAGER:LaunchLabManager|None=None
+
+def launch_lab_manager():
+    global _LAUNCH_LAB_MANAGER
+    if _LAUNCH_LAB_MANAGER is None:
+        _LAUNCH_LAB_MANAGER=LaunchLabManager(data_root(),ROOT/"launch_policy.local.json")
+    return _LAUNCH_LAB_MANAGER
+
+def _require_local_launch_lab(request:Request):
+    host=request.client.host if request.client else ""
+    if not _is_loopback(host):
+        raise HTTPException(404)
+
+def _probe_launch_json(url:str,timeout:float=1.2):
+    try:
+        request=urllib.request.Request(url,headers={"User-Agent":"JPGFLY-LaunchLab/1"})
+        with urllib.request.urlopen(request,timeout=timeout) as response:
+            if int(getattr(response,"status",200))!=200:return None
+            return json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return None
+
+def _probe_loopback_port(port:int,timeout:float=.45):
+    try:
+        with socket.create_connection(("127.0.0.1",int(port)),timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+def launch_stack_health():
+    ollama=_probe_launch_json("http://127.0.0.1:11434/api/tags")
+    flm=_probe_launch_json("http://127.0.0.1:4680/health")
+    male=_probe_launch_json("http://127.0.0.1:4690/health")
+    zebra=_probe_launch_json("http://127.0.0.1:4770/health")
+    nodes={
+        "ollama":bool(ollama and isinstance(ollama.get("models"),list)),
+        "flm":bool(flm and flm.get("ok") is True and flm.get("loaded") is True),
+        "malecns":bool(male and male.get("dataset")=="MaleCNS v1.0"),
+        "zebracns":bool(zebra and zebra.get("ok") is True),
+        "gateway":_probe_loopback_port(4681),
+        "jpgfly_app":True,
+    }
+    return {"healthy":all(nodes.values()),"nodes":nodes}
+
+def launch_agent_context():
+    studio=SESSIONS.get(CURRENT_STUDIO_ID) if CURRENT_STUDIO_ID else None
+    return {
+        "build":BUILD_ID,
+        "brain_version":BRAIN_VERSION,
+        "studio_state":studio.get("status") if studio else None,
+        "studio_decisions":int(studio.get("decision_count",0) or 0) if studio else 0,
+        "art_policy":get_art_policy().status(),
+        "system_input":local_input_snapshot(),
+    }
 
 def storage_root():return data_root()/"artworks"
 
@@ -258,8 +336,14 @@ def persist_artwork(record):
     directory=storage_root();directory.mkdir(parents=True,exist_ok=True);session_id=record["session_id"]
     frozen=json.loads(canonical(record));eligible=bool(frozen.get("launch_eligible"))
     frozen["launch_id"]=PUBLIC_LAUNCH_ID
-    frozen["quality_tier"]="FULL_BRAIN" if eligible else "DUMB_DUMB"
-    public_number=len(ARTWORKS)+1;frozen["room_number"]=public_number;frozen["room_code"]=f"ROOM-{public_number:04d}"
+    quality=str(frozen.get("quality_tier") or "").upper()
+    if quality not in {"FULL_BRAIN","DUMB_DUMB"}:
+        quality="FULL_BRAIN" if eligible else "DUMB_DUMB"
+    frozen["quality_tier"]=quality
+    try:public_number=int(frozen.get("room_number") or 0)
+    except (TypeError,ValueError):public_number=0
+    if public_number<=0:public_number=next_room_number()
+    frozen["room_number"]=public_number;frozen["room_code"]=f"ROOM-{public_number:04d}"
     prefix="data:image/svg+xml;base64,"
     uri=frozen.get("artifact_uri","")
     raw_svg=directory/(session_id+".svg")
@@ -321,19 +405,33 @@ def archive_storage_stats():
     totals["totalBytes"]=totals["manifestBytes"]+totals["artworkBytes"]+totals["replayBytes"]+totals["videoBytes"]
     return totals
 
+PUBLIC_NARRATIVE_LIMITS={"room_title":120,"room_description":3200,"memory_thread":1800,"anomaly_report":1800,"fly_statement":2000,"zebra_critique":1800}
+
+def _clean_public_record(record):
+    clean=dict(record or {})
+    for key,limit in PUBLIC_NARRATIVE_LIMITS.items():
+        if key in clean:
+            clean[key]=clean_public_text(clean.get(key),limit)
+    return clean
+
 def artwork_summary(record):
-    summary={key:record.get(key) for key in ("session_id","room_number","room_code","room_title","room_description","memory_thread","anomaly_report","fly_statement","state","status","completed_at","concept","thought_fragments","public_commentary","brain_mode","brain_version","decision_count","duration","completion_reason","hashes","structural_metrics","visual_context","storage","launch_eligible","quality_tier")}
+    clean_record=_clean_public_record(record)
+    summary={key:clean_record.get(key) for key in ("session_id","room_number","room_code","room_title","room_description","memory_thread","anomaly_report","fly_statement","zebra_critique","zebra_critic_observation_count","state","status","completed_at","concept","thought_fragments","public_commentary","brain_mode","brain_version","decision_count","duration","completion_reason","hashes","structural_metrics","visual_context","storage","launch_eligible","quality_tier","agent_profile","agent_name","agent_lore","agent_echo_rule","room_echoes","spawned_from")}
     summary["artifact_reference"]=(record.get("provenance") or {}).get("artifactReference") or record.get("artifact_reference")
     return summary|{"preview":f'/api/artworks/{record["session_id"]}/artwork.svg',"url":f'/artworks/{record["session_id"]}'}
 
 def recent_room_memory(limit=6):
     ordered=sorted(ARTWORKS.values(),key=lambda item:item.get("completed_at","") or "",reverse=True)[:max(1,min(12,limit))]
     return [{
+        "session_id":item.get("session_id"),
         "room_code":item.get("room_code"),
+        "agent_profile":item.get("agent_profile","jpgfly"),
+        "agent_name":item.get("agent_name","JPGFLY"),
+        "spawned_from":item.get("spawned_from"),
         "room_title":item.get("room_title"),
-        "room_description":item.get("room_description"),
-        "memory_thread":item.get("memory_thread"),
-        "fly_statement":item.get("fly_statement"),
+        "room_description":clean_public_text(item.get("room_description"),3200),
+        "memory_thread":clean_public_text(item.get("memory_thread"),1800),
+        "fly_statement":clean_public_text(item.get("fly_statement"),2000),
         "concept":item.get("concept"),
         "thought_fragments":(item.get("thought_fragments") or [])[-6:],
         "public_commentary":(item.get("public_commentary") or [])[-4:],
@@ -375,6 +473,7 @@ def live_narrative_context(session):
             "localDensity","directionalUniformity","consecutiveLowChange"
         )},
         "recent_public_notes":(session.get("public_commentary") or [])[-16:],
+        "agent":{"profile":session.get("agent_profile","jpgfly"),"name":session.get("agent_name","JPGFLY"),"lore":session.get("agent_lore",""),"echo_rule":session.get("agent_echo_rule",""),"spawned_from":session.get("spawned_from"),"room_echoes":session.get("room_echoes") or []},
         "earlier_rooms":recent_room_memory(8),
     }
 
@@ -493,6 +592,67 @@ async def generate_studio_commentary(session_id,sequence):
         session=SESSIONS.get(session_id)
         if session:
             session["_commentary_busy"]=False
+
+async def update_vision_composition(session_id,sequence):
+    """Let a local vision model periodically critique the actual canvas.
+
+    The result is cached into later observations. Vision never emits drawing
+    paths or pixels into the artwork; the Fly still chooses and physically
+    draws every subsequent stroke.
+    """
+    session=SESSIONS.get(session_id)
+    if not session or session.get("_vision_busy") or session.get("status") not in ("CREATED","RUNNING"):
+        return
+    session["_vision_busy"]=True
+    try:
+        mechanics=session.get("_mechanics")
+        if not mechanics:
+            return
+        paths=json.loads(canonical(list(mechanics.memory.paths[-650:])))
+        if len(paths)<3:
+            return
+        actions=[
+            record.get("action",{})
+            for record in (session.get("brain_decisions") or [])[-16:]
+            if isinstance(record,dict)
+        ]
+        brain=session.get("_brain")
+        try:
+            brain_context=brain.context_snapshot() if hasattr(brain,"context_snapshot") else {}
+        except Exception:
+            brain_context={}
+        recent_motifs=[
+            str(action.get("motifHint"))
+            for action in actions
+            if action.get("motifHint") and action.get("motifHint")!="NONE"
+        ][-6:]
+        context={
+            "current_position":list(mechanics.position),
+            "subject_program":brain_context.get("subject_program") or (actions[-1].get("subjectProgram") if actions else ""),
+            "composition_mode":brain_context.get("composition_mode") or (actions[-1].get("compositionMode") if actions else ""),
+            "phase":actions[-1].get("phase") if actions else "",
+            "recent_motifs":recent_motifs,
+        }
+        result=await asyncio.to_thread(analyze_composition,paths,context)
+        current=SESSIONS.get(session_id)
+        if not current or not result:
+            return
+        current["_vision_composition"]=result
+        current["_vision_last_sequence"]=int(sequence)
+        current["events"].append({
+            "type":"vision_composition",
+            "timestamp":int(current.get("duration",0) or 0),
+            "sequence":int(sequence),
+            **result,
+        })
+    except Exception as exc:
+        current=SESSIONS.get(session_id)
+        if current:
+            current["_vision_error"]=str(exc)[:240]
+    finally:
+        current=SESSIONS.get(session_id)
+        if current:
+            current["_vision_busy"]=False
 
 def derive_thought_fragments(records):
     """Turn recorded, observable action fields into short public-facing fragments."""
@@ -614,52 +774,91 @@ def parse_limits(raw):
 def public_limits(l):return {"maxSessionDurationMs":l.max_session_duration_ms,"maxBrainDecisions":l.max_brain_decisions,"maxPhysicalActions":l.max_physical_actions,"maxConsecutiveLowChange":l.max_consecutive_low_change}
 
 def expected_brush_profile(action):
-    base=round(.8+float(action["pressure"])*6.4,2)
-    profiles={"ink_line":(1,.92),"soft_paint":(2.15,.72),"dry_brush":(1.45,.76),"fine_pen":(.42,.98),"charcoal_grain":(1.35,.78),"wash":(3.1,.62),"stipple":(.78,.92),"splatter":(.7,.88),"subtractive":(1.7,1)}
-    width_factor,opacity_base=profiles.get(action.get("brushTool"),profiles["ink_line"])
-    return base,round(base*width_factor,2),round(opacity_base*(.9+float(action["pressure"])*.1),3)
+    # Use the exact same implementation as ServerCanvasMechanics. Keeping a
+    # second copy of this math caused rare false "brush execution mismatch"
+    # failures at float-rounding boundaries and could stall room finalization.
+    profile=brush_profile(action.get("brushTool") or "ink_line",float(action["pressure"]))
+    return float(profile["baseWidth"]),float(profile["width"]),float(profile["opacity"])
 
 def validate_mechanical_trace(session,events):
-    """Validate that submitted physical events stay inside the brain action envelope."""
+    """Validate authoritative physical events against Fly brain decisions.
+
+    Compound subjects intentionally emit several disconnected strokes under
+    one MOVE decision. Every physical event must still map to that decision.
+    """
     records=session["brain_decisions"]
     brain_events=[event for event in events if event.get("type")=="brain_decision"]
     if len(brain_events)!=len(records):raise HTTPException(400,"movement stream does not match brain decisions")
     physical=[event for event in events if event.get("type") in ("stroke","move")]
-    expected=[record for record in records if record["action"]["intent"]=="MOVE"]
-    if len(physical)!=len(expected):raise HTTPException(400,"each brain movement must have exactly one physical action")
-    by_decision={event.get("decision"):event for event in physical}
-    if len(by_decision)!=len(physical):raise HTTPException(400,"duplicate physical action")
+    groups={}
+    for event in physical:
+        decision=event.get("decision")
+        if not isinstance(decision,int) or not (0<=decision<len(records)):raise HTTPException(400,"physical action has invalid brain decision")
+        if records[decision]["action"]["intent"]!="MOVE":raise HTTPException(400,"physical action does not belong to a movement decision")
+        groups.setdefault(decision,[]).append(event)
+    expected={sequence for sequence,record in enumerate(records) if record["action"]["intent"]=="MOVE"}
+    if set(groups)!=expected:raise HTTPException(400,"each brain movement must have a physical action")
     position=[735.0,48.0]
-    for sequence,record in enumerate(records):
-        action=record["action"]; brain=brain_events[sequence]
-        if brain.get("decision")!=sequence or brain.get("intent")!=action["intent"]:raise HTTPException(400,"brain event mismatch")
-        if action["intent"]!="MOVE":continue
-        event=by_decision.get(sequence); expected_type="stroke" if action["brushDown"] else "move"
-        if not event or event.get("type")!=expected_type:raise HTTPException(400,"physical action contradicts fly decision")
-        expected_duration=round(max(90,min(1500,action["duration"]+action["hesitation"])))
-        if int(event.get("duration",-1))!=expected_duration:raise HTTPException(400,"physical timing contradicts fly decision")
-        if expected_type=="stroke":
-            points=event.get("points")
-            if not isinstance(points,list) or not 2<=len(points)<=96:raise HTTPException(400,"invalid incremental stroke")
-            if any(not isinstance(p,list) or len(p)!=2 or not all(isinstance(v,(int,float)) and math.isfinite(float(v)) for v in p) for p in points):raise HTTPException(400,"invalid stroke coordinates")
-            if any(not (24<=float(p[0])<=776 and 24<=float(p[1])<=476) for p in points):raise HTTPException(400,"stroke leaves the mechanical canvas")
-            if math.dist(points[0],position)>.01:raise HTTPException(400,"foreleg trace is discontinuous")
+
+    def validate_stroke(event,action,compound=False):
+        nonlocal position
+        points=event.get("points")
+        if not isinstance(points,list) or not 2<=len(points)<=96:raise HTTPException(400,"invalid incremental stroke")
+        if any(not isinstance(p,list) or len(p)!=2 or not all(isinstance(v,(int,float)) and math.isfinite(float(v)) for v in p) for p in points):raise HTTPException(400,"invalid stroke coordinates")
+        if any(not (24<=float(p[0])<=776 and 24<=float(p[1])<=476) for p in points):raise HTTPException(400,"stroke leaves the mechanical canvas")
+        if math.dist(points[0],position)>(1.6 if compound else .01):raise HTTPException(400,"foreleg trace is discontinuous")
+        if event.get("color")!=action["color"] or bool(event.get("erase",False))!=action["eraseIntent"]:raise HTTPException(400,"brush execution contradicts fly decision")
+        if event.get("brushTool")!=action.get("brushTool") or event.get("technique")!=action.get("technique"):raise HTTPException(400,"tool execution contradicts fly decision")
+        expected_base,expected_width,expected_opacity=expected_brush_profile(action)
+        try:base_width=float(event.get("baseWidth",-1));width=float(event.get("width",-1));opacity=float(event.get("opacity",-1))
+        except (TypeError,ValueError):raise HTTPException(400,"invalid brush metrics")
+        if not all(math.isfinite(v) for v in (base_width,width,opacity)):raise HTTPException(400,"invalid brush metrics")
+        if abs(base_width-expected_base)>.02 or abs(width-expected_width)>.02 or abs(opacity-expected_opacity)>.002:raise HTTPException(400,"brush execution mismatch")
+        if compound:
+            try:duration=int(event.get("duration",-1))
+            except (TypeError,ValueError):duration=-1
+            if not 90<=duration<=1500:raise HTTPException(400,"invalid compound stroke timing")
+        else:
+            expected_duration=round(max(90,min(1500,action["duration"]+action["hesitation"])))
+            if int(event.get("duration",-1))!=expected_duration:raise HTTPException(400,"physical timing contradicts fly decision")
             length=sum(math.dist(points[i-1],points[i]) for i in range(1,len(points)))
             figure_multiplier=1.87 if action.get("motifHint") in FIGURE_MOTIFS else 1.02
             if length>float(action["movementDistance"])*figure_multiplier+.2:raise HTTPException(400,"stroke exceeds fly movement")
-            if event.get("color")!=action["color"] or bool(event.get("erase",False))!=action["eraseIntent"]:raise HTTPException(400,"brush execution contradicts fly decision")
-            if event.get("brushTool")!=action.get("brushTool") or event.get("technique")!=action.get("technique"):raise HTTPException(400,"tool execution contradicts fly decision")
-            expected_base,expected_width,expected_opacity=expected_brush_profile(action)
-            try:base_width=float(event.get("baseWidth",-1));width=float(event.get("width",-1));opacity=float(event.get("opacity",-1))
-            except (TypeError,ValueError):raise HTTPException(400,"invalid brush metrics")
-            if not all(math.isfinite(v) for v in (base_width,width,opacity)):raise HTTPException(400,"invalid brush metrics")
-            if abs(base_width-expected_base)>.02 or abs(width-expected_width)>.02 or abs(opacity-expected_opacity)>.002:raise HTTPException(400,"brush execution mismatch")
-            position=[float(points[-1][0]),float(points[-1][1])]
-        else:
-            start=event.get("from"); end=event.get("to")
-            if not isinstance(start,list) or not isinstance(end,list) or len(start)!=2 or len(end)!=2 or not all(isinstance(v,(int,float)) and math.isfinite(float(v)) for v in start+end):raise HTTPException(400,"invalid foreleg move")
-            if not (24<=float(end[0])<=776 and 24<=float(end[1])<=476) or math.dist(start,position)>.01 or math.dist(start,end)>float(action["movementDistance"])+.05:raise HTTPException(400,"foreleg move contradicts fly decision")
-            position=[float(end[0]),float(end[1])]
+        position=[float(points[-1][0]),float(points[-1][1])]
+
+    def validate_move(event,action,compound=False):
+        nonlocal position
+        start=event.get("from");end=event.get("to")
+        if not isinstance(start,list) or not isinstance(end,list) or len(start)!=2 or len(end)!=2 or not all(isinstance(v,(int,float)) and math.isfinite(float(v)) for v in start+end):raise HTTPException(400,"invalid foreleg move")
+        if not (24<=float(end[0])<=776 and 24<=float(end[1])<=476):raise HTTPException(400,"foreleg move leaves the mechanical canvas")
+        if math.dist(start,position)>.05:raise HTTPException(400,"foreleg move is discontinuous")
+        maximum=(float(action["movementDistance"])+.05) if not compound else max(48.0,float(action["movementDistance"])*2.5)
+        if math.dist(start,end)>maximum:raise HTTPException(400,"foreleg move contradicts fly decision")
+        position=[float(end[0]),float(end[1])]
+
+    for sequence,record in enumerate(records):
+        action=record["action"];brain=brain_events[sequence]
+        if brain.get("decision")!=sequence or brain.get("intent")!=action["intent"]:raise HTTPException(400,"brain event mismatch")
+        if action["intent"]!="MOVE":continue
+        group=groups.get(sequence) or []
+        compound=bool(action.get("brushDown") and not action.get("eraseIntent") and action.get("motifHint") in FIGURE_MOTIFS and any(event.get("type")=="stroke" and event.get("compoundSubject") for event in group))
+        if not compound:
+            if len(group)!=1:raise HTTPException(400,"non-compound movement emitted multiple physical actions")
+            event=group[0];expected_type="stroke" if action["brushDown"] else "move"
+            if event.get("type")!=expected_type:raise HTTPException(400,"physical action contradicts fly decision")
+            validate_stroke(event,action,False) if expected_type=="stroke" else validate_move(event,action,False)
+            continue
+        strokes=[event for event in group if event.get("type")=="stroke"]
+        if not 1<=len(strokes)<=14:raise HTTPException(400,"invalid compound subject stroke count")
+        indexes=[];counts=set()
+        for event in strokes:
+            try:indexes.append(int(event.get("subjectPart")));counts.add(int(event.get("subjectPartCount")))
+            except (TypeError,ValueError):raise HTTPException(400,"compound subject is missing part metadata")
+        if indexes!=list(range(len(strokes))) or counts!={len(strokes)}:raise HTTPException(400,"compound subject part sequence mismatch")
+        for event in group:
+            if event.get("type")=="move":validate_move(event,action,True)
+            elif event.get("type")=="stroke":validate_stroke(event,action,True)
+            else:raise HTTPException(400,"invalid compound physical event")
 
 def artwork_svg(events):
     marks=[]
@@ -667,8 +866,20 @@ def artwork_svg(events):
         if event.get("type")!="stroke":continue
         raw=event["points"];points=" ".join(f'{float(p[0]):.3f},{float(p[1]):.3f}' for p in raw)
         tool=event.get("brushTool","ink_line");technique=event.get("technique","continuous");correction=bool(event.get("erase")) or tool=="subtractive"
-        color="#ffffff" if correction else event["color"];width=float(event["width"]);opacity=1 if correction else float(event.get("opacity",1))
+        color="#ffffff" if correction else html.escape(str(event["color"]),quote=True);width=float(event["width"]);opacity=1 if correction else float(event.get("opacity",1))
         poly=lambda w=width,o=opacity,dx=0,dy=0:f'<polyline points="{points}" transform="translate({dx:.2f} {dy:.2f})" fill="none" stroke="{color}" stroke-width="{w:.2f}" stroke-opacity="{o:.3f}" stroke-linecap="round" stroke-linejoin="round"/>'
+        effect=str(event.get("renderEffect") or "MATTE").upper();depth=max(0.0,min(1.0,float(event.get("paintDepth") or 0)))
+        if not correction:
+            if effect=="NEON" or tool=="neon_glow":
+                marks.append(poly(width*(2.5+depth*2.6),max(.08,opacity*.20)));marks.append(poly(width*(1.55+depth),max(.14,opacity*.30)))
+            elif effect=="IMPASTO" or tool in ("impasto_heavy","oil_lump"):
+                marks.append(f'<polyline points="{points}" transform="translate({1.5+depth*3:.2f} {1.8+depth*3:.2f})" fill="none" stroke="#111111" stroke-width="{width*(1.08+depth*.8):.2f}" stroke-opacity="{max(.20,opacity*.46):.3f}" stroke-linecap="round" stroke-linejoin="round"/>')
+                marks.append(f'<polyline points="{points}" transform="translate({-.8-depth*1.4:.2f} {-.8-depth*1.4:.2f})" fill="none" stroke="#ffffff" stroke-width="{max(.7,width*.18):.2f}" stroke-opacity="{max(.16,opacity*.34):.3f}" stroke-linecap="round" stroke-linejoin="round"/>')
+            elif effect=="CHROME" or tool=="chrome_ribbon":
+                marks.append(f'<polyline points="{points}" transform="translate(1.20 1.80)" fill="none" stroke="#111111" stroke-width="{width*1.45:.2f}" stroke-opacity="{max(.18,opacity*.42):.3f}" stroke-linecap="round" stroke-linejoin="round"/>')
+                marks.append(f'<polyline points="{points}" transform="translate(-.90 -.90)" fill="none" stroke="#ffffff" stroke-width="{max(.65,width*.18):.2f}" stroke-opacity=".720" stroke-linecap="round" stroke-linejoin="round"/>')
+            elif effect=="AIRBRUSH" or tool=="airbrush_fog":marks.append(poly(width*3.8,max(.06,opacity*.16)))
+            elif effect=="BLEED" or tool=="marker_bleed":marks.append(poly(width*2.1,max(.10,opacity*.24),.8,.6))
         if tool in ("stipple","splatter") or technique=="stippling":
             dots=[];count=4 if tool=="splatter" else 1;seed=int(event.get("decision",0))+1
             for i,p in enumerate(raw[::2]):
@@ -689,33 +900,139 @@ def artwork_svg(events):
     svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500"><rect width="800" height="500" fill="#ffffff"/>'+''.join(marks)+'</svg>'
     return svg,"data:image/svg+xml;base64,"+base64.b64encode(svg.encode()).decode()
 
+HTML_CACHE={"Cache-Control":"public, max-age=30, stale-while-revalidate=300"}
+STATIC_CACHE={"Cache-Control":"public, max-age=604800, stale-while-revalidate=2592000"}
+
 @app.get("/")
-def index():return FileResponse(WEB/"index.html",headers={"Cache-Control":"no-store"})
+def index():return FileResponse(WEB/"live.html",headers=HTML_CACHE)
 @app.get("/live")
-def live():return FileResponse(WEB/"live.html",headers={"Cache-Control":"no-store"})
+def live():return FileResponse(WEB/"live.html",headers=HTML_CACHE)
+@app.get("/about")
+def about():return FileResponse(WEB/"index.html",headers=HTML_CACHE)
+@app.get("/launch-lab")
+def launch_lab_page(request:Request):
+    _require_local_launch_lab(request)
+    return FileResponse(WEB/"launch-lab.html",headers={"Cache-Control":"no-store"})
+
+@app.get("/launch-proof")
+def launch_proof_page(request:Request):
+    _require_local_launch_lab(request)
+    return FileResponse(WEB/"launch-proof.html",headers={"Cache-Control":"no-store"})
 @app.get("/archive")
-def archive():return FileResponse(WEB/"archive.html",headers={"Cache-Control":"no-store"})
+def archive():return FileResponse(WEB/"archive.html",headers=HTML_CACHE)
 @app.get("/artworks/{session_id}")
-def artwork_page(session_id:str):return FileResponse(WEB/"artwork.html",headers={"Cache-Control":"no-store"})
-@app.get("/images/fly.png")
-def fly_image():return FileResponse(WEB/"images"/"fly.png",media_type="image/png",headers={"Cache-Control":"no-store"})
-@app.get("/images/fly.webp")
-def fly_image_compat():return FileResponse(WEB/"images"/"fly.png",media_type="image/png",headers={"Cache-Control":"no-store"})
-@app.get("/images/fly-agent.webp")
-def fly_agent_image_compat():return FileResponse(WEB/"images"/"fly.png",media_type="image/png",headers={"Cache-Control":"no-store"})
+def artwork_page(session_id:str):return FileResponse(WEB/"artwork.html",headers=HTML_CACHE)
+
+@app.get("/favicon.ico")
+def favicon():
+    return FileResponse(
+        WEB/"images"/"jpgfly-icon-white.png",
+        media_type="image/png",
+        headers={"Cache-Control":"no-store, max-age=0"},
+    )
+
+@app.get("/site.webmanifest")
+def site_manifest():
+    return FileResponse(
+        WEB/"site.webmanifest",
+        media_type="application/manifest+json",
+        headers={"Cache-Control":"no-store, max-age=0"},
+    )
+
+@app.get("/images/{name}")
+def image_asset(name:str):
+    if Path(name).name!=name or Path(name).suffix.lower() not in {".png",".webp",".jpg",".jpeg",".svg"}:raise HTTPException(404)
+    if name in {"fly.webp","fly-agent.webp"}:
+        return FileResponse(WEB/"images"/"fly.png",media_type="image/png",headers=STATIC_CACHE)
+    path=WEB/"images"/name
+    if not path.is_file():raise HTTPException(404)
+    return FileResponse(path,headers=STATIC_CACHE)
 @app.get("/assets/{name}")
 def asset(name:str):
     if Path(name).name!=name or Path(name).suffix not in {".js",".mjs",".css"}:raise HTTPException(404)
     path=WEB/name
     if not path.is_file():raise HTTPException(404)
-    return FileResponse(path,headers={"Cache-Control":"no-cache, must-revalidate"})
+    return FileResponse(path,headers=STATIC_CACHE)
+
+@app.get("/api/launch-lab/status")
+def launch_lab_status(request:Request):
+    _require_local_launch_lab(request)
+    manager=launch_lab_manager()
+    status=manager.status()
+    status["stack"]=launch_stack_health()
+    return status
+
+@app.post("/api/launch-lab/arm")
+def launch_lab_arm(request:Request):
+    _require_local_launch_lab(request)
+    try:return launch_lab_manager().arm(launch_stack_health(),launch_agent_context())
+    except LaunchLabError as exc:raise HTTPException(409,str(exc))
+
+@app.post("/api/launch-lab/human-input")
+def launch_lab_human_input(payload:LaunchHumanInputRequest,request:Request):
+    _require_local_launch_lab(request)
+    return launch_lab_manager().record_human_input(payload.kind)
+
+@app.post("/api/launch-lab/reset")
+def launch_lab_reset(request:Request):
+    _require_local_launch_lab(request)
+    return launch_lab_manager().reset()
+
+@app.get("/api/launch-lab/receipt")
+def launch_lab_receipt(request:Request):
+    _require_local_launch_lab(request)
+    try:return launch_lab_manager().receipt()
+    except LaunchLabError as exc:raise HTTPException(404,str(exc))
+
+@app.get("/api/launch-lab/bundle")
+def launch_lab_bundle(request:Request):
+    _require_local_launch_lab(request)
+    try:
+        bundle=launch_lab_manager().proof_bundle()
+    except LaunchLabError as exc:
+        raise HTTPException(404,str(exc))
+    filename=f"jpgfly-launch-proof-{bundle['session_id']}.json"
+    payload=json.dumps(bundle,ensure_ascii=False,separators=(",",":"))
+    return Response(
+        content=payload,
+        media_type="application/json",
+        headers={
+            "Content-Disposition":f'attachment; filename="{filename}"',
+            "Cache-Control":"no-store",
+        },
+    )
+
+@app.get("/api/launch-lab/verify")
+def launch_lab_verify(request:Request):
+    _require_local_launch_lab(request)
+    try:return launch_lab_manager().verify_session()
+    except LaunchLabError as exc:raise HTTPException(404,str(exc))
+
+@app.get("/api/launch-lab/sessions/{session_id}/verify")
+def launch_lab_verify_session(session_id:str,request:Request):
+    _require_local_launch_lab(request)
+    try:return launch_lab_manager().verify_session(session_id)
+    except LaunchLabError as exc:raise HTTPException(404,str(exc))
+
+
+@app.get("/api/drawables")
+def public_drawables():
+    catalog=drawable_catalog()
+    catalog["totalSemanticSubjects"]=len(catalog["aliases"])
+    return catalog
 
 @app.get("/api/config")
 def public_config():
-    return {"project":"JPGFLY","build":BUILD_ID,"mode":"BACKROOMS","archiveMode":"image+text","replayStorage":False,"videoStorage":False,"timeStandard":TIME_STANDARD,"brainMode":configured_brain_mode(),"textProvider":configured_text_provider().upper(),"modelStack":"QWEN + FLM","artBrain":"FLY BRAIN","visualEngine":"FLY BRAIN","flyLanguageModel":"FLM","autonomousStudio":os.environ.get("JPGFLY_AUTONOMOUS_STUDIO","true").lower()!="false","currentStudioSession":CURRENT_STUDIO_ID}
+    return {"project":"JPGFLY","build":BUILD_ID,"agents":public_agent_profiles(),"mode":"BACKROOMS","archiveMode":"image+text","replayStorage":False,"videoStorage":False,"timeStandard":TIME_STANDARD,"brainMode":configured_brain_mode(),"textProvider":configured_text_provider().upper(),"modelStack":"QWEN + FLM","artBrain":"FLY BRAIN","visualEngine":"FLY BRAIN","flyLanguageModel":"FLM","zebraCNS":"LOCAL-FIRST REAL ACTIVITY + CRITIC","autonomousStudio":os.environ.get("JPGFLY_AUTONOMOUS_STUDIO","true").lower()!="false","currentStudioSession":CURRENT_STUDIO_ID}
 
 @app.get("/api/public/activity")
 def public_activity():return {"mode":"LIVE","events":PUBLIC_ACTIVITY}
+
+@app.get("/api/studio/zebracns")
+def zebracns_state():
+    """Public, sanitized view of the optional local ZebraCNS game engine."""
+    return public_zebracns_state()
+
 
 def _malecns_endpoint():
     enabled=os.environ.get("JPGFLY_MALECNS_ENABLED","").strip().lower() in {"1","true","yes","on"} or bool(os.environ.get("JPGFLY_MALECNS_URL","").strip())
@@ -826,7 +1143,7 @@ def _public_malecns_network_payload(state):
 @app.get("/api/studio/malecns")
 def public_malecns_state():
     return _cached_malecns(
-        MALECNS_PUBLIC_STATE,
+        _MALE_PUBLIC_STATE,
         "MaleCNS public telemetry",
         "/state",
         1.25,
@@ -836,13 +1153,21 @@ def public_malecns_state():
         {"ok":False,"enabled":True,"dataset":"MaleCNS v1.0","top_active":[]},
     )
 
+@app.get("/api/studio/neural")
+def public_neural_state():
+    return {
+        "male":public_malecns_state(),
+        "zebra":public_zebracns_state(max_age=0.9),
+        "sampled_at":round(time.time(),3),
+    }
+
 @app.get("/api/studio/malecns/network")
 def public_malecns_network():
     return _cached_malecns(
-        MALECNS_PUBLIC_NETWORK,
+        _MALE_PUBLIC_NETWORK,
         "MaleCNS public network",
         "/network",
-        1.5,
+        1.75,
         20.0,
         30.0,
         _public_malecns_network_payload,
@@ -878,12 +1203,36 @@ install_studio_delta(app, lambda: CURRENT_STUDIO_ID, SESSIONS, load_artwork_reco
 @app.post("/api/sessions")
 async def create_session(request:StartRequest):
     prune_sessions()
+    agent_profile=normalize_agent_profile(request.agent_profile)
+    agent_spec=get_agent_profile(agent_profile)
     if len(SESSIONS)>=MAX_ACTIVE_SESSIONS:raise HTTPException(503,"too many active creation sessions")
     session_id=secrets.token_hex(32); seed=(request.seed if request.seed is not None else int(session_id[:8],16))&0xffffffff
-    limits=parse_limits(request.limits); brain=create_fly_brain(seed,complexity=request.complexity,mutation=request.mutation,density=request.density); mechanics=ServerCanvasMechanics(seed,session_id)
+    limits=parse_limits(request.limits); brain=create_fly_brain(seed,complexity=request.complexity,mutation=request.mutation,density=request.density,agent_profile=agent_profile); mechanics=ServerCanvasMechanics(seed,session_id)
     dumb_brain=ProceduralFlyBrain(seed,request.complexity,request.mutation,request.density,getattr(brain,"experience",{}) or {})
     dumb_brain.mode="DUMB DUMB MODE · PURE PYTHON FALLBACK"
-    session={"session_id":session_id,"status":"CREATED","seed":seed,"brain_mode":brain.mode,"brain_version":BRAIN_VERSION,"parameters":{"complexity":request.complexity,"mutation":request.mutation,"density":request.density},"limits":public_limits(limits),"decision_count":0,"physical_action_count":0,"brain_decisions":[],"evaluation_checkpoints":[],"public_commentary":[],"completion_reason":None,"events":mechanics.events,"hashes":{},"_brain":brain,"_dumb_brain":dumb_brain,"_mechanics":mechanics,"_limits":limits,"_decision_lock":asyncio.Lock(),"_commentary_busy":False,"_full_brain_from_start":None,"_hard_fallback_decisions":0,"_normal_art_decisions":0,"_last_full_brain_mode":brain.mode,"_created":time.monotonic(),"_accepting":True,"_frozen":False}
+    recent=recent_room_memory(10)
+    # Cross-room memory is explicit: descendants first hear another line,
+    # then the origin, then their own recent work. The origin hears descendants
+    # before itself. This keeps echoes cross-pollinating without self-cloning.
+    def echo_rank(item):
+        profile=item.get("agent_profile","jpgfly")
+        if profile==agent_profile:return 2
+        if agent_profile!="jpgfly" and profile=="jpgfly":return 1
+        return 0
+    ranked=sorted(recent,key=echo_rank)
+    seen=set();room_echoes=[]
+    for item in ranked:
+        code=item.get("room_code")
+        if not code or code in seen:continue
+        seen.add(code);room_echoes.append({"session_id":item.get("session_id"),"room_code":code,"agent_profile":item.get("agent_profile","jpgfly"),"agent_name":item.get("agent_name"),"room_title":item.get("room_title")})
+        if len(room_echoes)>=4:break
+    spawned_from=None
+    if agent_profile!="jpgfly":
+        archive_recent=sorted(ARTWORKS.values(),key=lambda item:item.get("completed_at","") or "",reverse=True)
+        prior=next((item for item in archive_recent if item.get("agent_profile")==agent_profile and item.get("spawned_from")),None)
+        origin=next((item for item in reversed(archive_recent) if item.get("agent_profile","jpgfly")=="jpgfly" and item.get("room_code")),None)
+        spawned_from=(prior or {}).get("spawned_from") or (origin or {}).get("room_code")
+    session={"session_id":session_id,"agent_profile":agent_profile,"agent_name":agent_spec["name"],"agent_lore":agent_spec["lore"],"agent_echo_rule":agent_spec.get("echo_rule",""),"room_echoes":room_echoes,"spawned_from":spawned_from,"status":"CREATED","seed":seed,"brain_mode":brain.mode,"brain_version":BRAIN_VERSION,"parameters":{"complexity":request.complexity,"mutation":request.mutation,"density":request.density,"agent_profile":agent_profile},"limits":public_limits(limits),"decision_count":0,"physical_action_count":0,"brain_decisions":[],"evaluation_checkpoints":[],"public_commentary":[],"completion_reason":None,"events":mechanics.events,"hashes":{},"_brain":brain,"_dumb_brain":dumb_brain,"_mechanics":mechanics,"_limits":limits,"_decision_lock":asyncio.Lock(),"_commentary_busy":False,"_vision_busy":False,"_vision_composition":{},"_vision_last_sequence":-1,"_full_brain_from_start":None,"_hard_fallback_decisions":0,"_normal_art_decisions":0,"_last_full_brain_mode":brain.mode,"_created":time.monotonic(),"_accepting":True,"_frozen":False}
     SESSIONS[session_id]=session; return public_session(session)
 
 @app.get("/api/sessions")
@@ -891,8 +1240,12 @@ def compare_sessions():
     return {"sessions":[artwork_summary(record) for record in sorted(ARTWORKS.values(),key=lambda item:item.get("completed_at","") or "",reverse=True)[:12]]}
 
 @app.get("/api/artworks/recent")
-def recent_artworks(limit:int=9):
-    selected=sorted(ARTWORKS.values(),key=lambda item:item.get("completed_at","") or "",reverse=True)[:max(1,min(12,limit))]
+def recent_artworks(limit:int=9,agent:str=""):
+    selected=sorted(ARTWORKS.values(),key=lambda item:item.get("completed_at","") or "",reverse=True)
+    agent_key=str(agent or "").strip().casefold()
+    if agent_key:
+        selected=[item for item in selected if item.get("agent_profile","jpgfly")==agent_key] if agent_key in AGENT_PROFILES else []
+    selected=selected[:max(1,min(12,limit))]
     return {"artworks":[artwork_summary(record) for record in selected]}
 
 def artwork_search_blob(record):
@@ -916,8 +1269,11 @@ def storage_stats():
     return archive_storage_stats()
 
 @app.get("/api/artworks")
-def archive_artworks(offset:int=0,limit:int=24,q:str=""):
+def archive_artworks(offset:int=0,limit:int=24,q:str="",agent:str=""):
     ordered=sorted(ARTWORKS.values(),key=lambda item:item.get("completed_at","") or "",reverse=True)
+    agent_key=str(agent or "").strip().casefold()
+    if agent_key:
+        ordered=[item for item in ordered if item.get("agent_profile","jpgfly")==agent_key] if agent_key in AGENT_PROFILES else []
     terms=[term for term in re.split(r"\s+",(q or "").strip().casefold()) if term]
     if terms:
         ordered=[record for record in ordered if all(term in artwork_search_blob(record) for term in terms)]
@@ -929,7 +1285,7 @@ def get_artwork(session_id:str):
     if session_id not in ARTWORKS:raise HTTPException(404,"artwork not found")
     record=load_artwork_record(session_id)
     if not record:raise HTTPException(404,"artwork record unavailable")
-    return record
+    return _clean_public_record(record)
 
 @app.get("/api/artworks/{session_id}/artwork.svg")
 def get_artwork_svg(session_id:str):
@@ -938,7 +1294,10 @@ def get_artwork_svg(session_id:str):
     storage=manifest.get("storage") or {}
     gz_name=storage.get("artwork")
     if gz_name and str(gz_name).endswith(".svg.gz"):
-        path=storage_root()/gz_name
+        expected_name=session_id+".svg.gz"
+        if str(gz_name)!=expected_name:raise HTTPException(500,"invalid artwork storage reference")
+        root=storage_root().resolve();path=(root/expected_name).resolve()
+        if path.parent!=root:raise HTTPException(500,"invalid artwork storage reference")
         if not path.is_file():raise HTTPException(404,"artwork image not found")
         try:
             raw=gzip.decompress(path.read_bytes())
@@ -985,8 +1344,41 @@ async def session_decision(session_id:str,request:DecisionRequest):
             return {"action":record["action"],"observation":record["observation"],"events":[],"serverClock":session["_mechanics"].clock,"state":session["status"],"brainMode":session["brain_mode"],"sequence":request.sequence,"replayed":True}
         if request.sequence!=len(decisions):raise HTTPException(409,"decision sequence mismatch")
         mechanics=session["_mechanics"];observation=mechanics.observe(len(decisions));before=len(session["events"])
+        vision=session.get("_vision_composition") or {}
+        if not vision and request.sequence==0 and os.environ.get("JPGFLY_VISION_COMPOSITION","true").lower()!="false":
+            brain=session.get("_brain")
+            try:
+                brain_context=brain.context_snapshot() if hasattr(brain,"context_snapshot") else {}
+            except Exception:
+                brain_context={}
+            initial_context={
+                "initial":True,
+                "current_position":list(mechanics.position),
+                "subject_program":brain_context.get("subject_program") or "",
+                "composition_mode":brain_context.get("composition_mode") or "",
+                "phase":"EXPLORATION",
+                "recent_motifs":[],
+            }
+            mark_studio_progress()
+            initial_vision=await asyncio.to_thread(analyze_composition,[],initial_context)
+            mark_studio_progress()
+            if initial_vision:
+                session["_vision_composition"]=initial_vision
+                session["_vision_last_sequence"]=0
+                vision=initial_vision
+                session["events"].append({
+                    "type":"vision_composition",
+                    "timestamp":int(mechanics.clock),
+                    "sequence":0,
+                    "initial":True,
+                    **initial_vision,
+                })
+        if vision:
+            observation["visionComposition"]=json.loads(canonical(vision))
         try:
+            mark_studio_progress()
             action=await asyncio.to_thread(session["_brain"].decide,BrainRequest(observation=observation),session["_limits"])
+            mark_studio_progress()
         except Exception:
             LOGGER.exception("Fly Brain decision failed; switching session to DUMB DUMB pure-Python fallback")
             session["_brain"]=session["_dumb_brain"]
@@ -995,8 +1387,10 @@ async def session_decision(session_id:str,request:DecisionRequest):
         data=action.model_dump()
         session["brain_mode"]=session["_brain"].mode
 
-        # Count only the actual emergency painter toward final Room fallback.
-        # A transient support-node status label is not an art-brain failure.
+        # Live support-node outages may temporarily label the running session
+        # DUMB DUMB, but they do not mean the art brain itself fell back.
+        # Count only the actual pure-Python fallback brain toward the final
+        # Room classification.
         hard_fallback=session.get("_brain") is session.get("_dumb_brain")
         if hard_fallback:
             session["_hard_fallback_decisions"]=int(session.get("_hard_fallback_decisions",0))+1
@@ -1019,8 +1413,15 @@ async def session_decision(session_id:str,request:DecisionRequest):
         else:
             mechanics.execute(data,request.sequence);session["status"]="RUNNING"
         session["physical_action_count"]=mechanics.physicalActionCount;session["duration"]=mechanics.clock
-        if data["intent"]!="FINISH_ARTWORK" and configured_text_provider() in ("ollama","flm","hybrid") and (len(decisions)%8==0 or bool(data.get("evaluation"))):
-            asyncio.create_task(generate_studio_commentary(session_id,request.sequence))
+        if data["intent"]!="FINISH_ARTWORK":
+            if configured_text_provider() in ("ollama","flm","hybrid") and (len(decisions)%8==0 or bool(data.get("evaluation"))):
+                asyncio.create_task(generate_studio_commentary(session_id,request.sequence))
+            try:
+                vision_interval=max(8,min(40,int(os.environ.get("JPGFLY_VISION_INTERVAL","16"))))
+            except ValueError:
+                vision_interval=16
+            if len(decisions)==8 or (len(decisions)>8 and len(decisions)%vision_interval==0):
+                asyncio.create_task(update_vision_composition(session_id,request.sequence))
         return {"action":data,"observation":observation,"events":json.loads(canonical(session["events"][before:])),"serverClock":mechanics.clock,"state":session["status"],"brainMode":session["brain_mode"],"sequence":request.sequence,"replayed":False}
 
 @app.post("/api/sessions/{session_id}/finalize")
@@ -1044,6 +1445,8 @@ def finalize_session(session_id:str,request:FinalizeRequest):
     structural_metrics["contextPassCounts"]={value:sum(1 for action in actions if action.get("contextPass")==value) for value in sorted({action.get("contextPass") for action in actions if action.get("contextPass")})}
     structural_metrics["roomTensionCounts"]={value:sum(1 for action in actions if action.get("roomTension")==value) for value in sorted({action.get("roomTension") for action in actions if action.get("roomTension")})}
     visual_context=session["_brain"].context_snapshot() if hasattr(session["_brain"],"context_snapshot") else {}
+    visual_context["agent_profile"]=session.get("agent_profile","jpgfly")
+    visual_context["agent_name"]=session.get("agent_name","JPGFLY")
     svg,artifact_uri=artwork_svg(events); artifact="jpgfly-svg:"+hashlib.sha256(svg.encode()).hexdigest()
     room_number=next_room_number();completed_at=datetime.now(timezone.utc).isoformat()
     thoughts=derive_thought_fragments(session["brain_decisions"]);concept=derive_concept(session["brain_decisions"],structural_metrics);room=derive_room_profile(room_number,session["brain_decisions"],structural_metrics,concept)
@@ -1090,14 +1493,62 @@ def finalize_session(session_id:str,request:FinalizeRequest):
         "room_tension_counts":{value:sum(1 for action in actions if action.get("roomTension")==value) for value in sorted({action.get("roomTension") for action in actions if action.get("roomTension")})},
         "context_pass_counts":{value:sum(1 for action in actions if action.get("contextPass")==value) for value in sorted({action.get("contextPass") for action in actions if action.get("contextPass")})},
         "visual_context":visual_context,
+        "agent_profile":session.get("agent_profile","jpgfly"),
+        "agent_name":session.get("agent_name","JPGFLY"),
+        "agent_lore":session.get("agent_lore",""),
+        "room_echoes":session.get("room_echoes") or [],
+        "spawned_from":session.get("spawned_from"),
         "color_counts":{value:sum(1 for action in actions if action.get("color")==value) for value in sorted({action.get("color") for action in actions if action.get("color")})},
         "earlier_rooms":recent_room_memory(8),
     }
+    zebra_records=[
+        record for record in session["brain_decisions"]
+        if isinstance((record.get("action") or {}).get("zebracnsActivity"),dict)
+        and (record.get("action") or {}).get("zebracnsActivity")
+    ]
+    zebra_stride=max(1,len(zebra_records)//16) if zebra_records else 1
+    zebra_observations=[]
+    for record in zebra_records[::zebra_stride][:18]:
+        action=record.get("action") or {}
+        observation=record.get("observation") or {}
+        zebra=action.get("zebracnsActivity") or {}
+        zebra_observations.append({
+            "decision":int(record.get("sequence",0) or 0),
+            "phase":action.get("phase"),
+            "movement":action.get("movementStyle"),
+            "brush":action.get("brushTool"),
+            "technique":action.get("technique"),
+            "motif":action.get("motifHint"),
+            "transform":action.get("motifTransform"),
+            "decision_mode":action.get("decisionMode"),
+            "relationship":action.get("relationshipToExistingMarks"),
+            "reason":str(action.get("reason") or "")[:280],
+            "canvas":{
+                "occupancy":observation.get("canvasOccupancy"),
+                "intersections":observation.get("intersections"),
+                "repetition":observation.get("repetition"),
+                "density_contrast":observation.get("densityContrast"),
+                "meaningful_change":observation.get("meaningfulChangeRate"),
+            },
+            "zebra":zebra,
+        })
+    context["zebra_critic_observations"]=zebra_observations
+    context["writing_theme"]=choose_room_theme(context,session["seed"])
+
+    # Archive classification is based on the whole painting, not the final
+    # network moment. Temporary Qwen/FLM outages can show DUMB DUMB live but
+    # do not create a DUMB DUMB Room. Only actual emergency-painter decisions
+    # count, and the Room stays normal through a 35% hard-fallback ratio.
     hard_fallback_decisions=int(session.get("_hard_fallback_decisions",0))
     normal_art_decisions=int(session.get("_normal_art_decisions",0))
     total_art_decisions=hard_fallback_decisions+normal_art_decisions
     fallback_ratio=(hard_fallback_decisions/total_art_decisions) if total_art_decisions else 0.0
+    # Up to and including 35% actual fallback still archives as a normal Room.
+    # Only >35% fallback becomes a DUMB DUMB Room. Final archive quality is based
+    # on this whole-session ratio, never on a temporary support-node outage.
     archive_dumb_dumb=fallback_ratio>0.35
+    session["quality_tier"]="DUMB_DUMB" if archive_dumb_dumb else "FULL_BRAIN"
+    session["launch_eligible"]=not archive_dumb_dumb
 
     try:
         if archive_dumb_dumb:
@@ -1147,6 +1598,12 @@ def finalize_session(session_id:str,request:FinalizeRequest):
             text_provider="LITERARY_FALLBACK"
         session["_room_text_error"]=str(exc)[:500]
 
+    # Final public-text gate: never archive markdown wrappers, raw character-cut
+    # fragments, or orphan trailing one-letter generation artifacts.
+    for key,limit in PUBLIC_NARRATIVE_LIMITS.items():
+        if key!="zebra_critique" and key in room:
+            room[key]=clean_public_text(room.get(key),limit)
+
     # Third-party/optional writers may not yet implement the memory-thread field.
     # Fill only that missing field without overwriting successful generated prose.
     if not room.get("memory_thread"):
@@ -1154,12 +1611,38 @@ def finalize_session(session_id:str,request:FinalizeRequest):
             room["memory_thread"]=dumb_dumb_room_text(context,session["seed"]).get("memory_thread","")
         else:
             room["memory_thread"]=generate_room_fallback(context,session["seed"]).get("memory_thread","")
+    context["room_title"]=room.get("room_title")
+    context["room_description"]=room.get("room_description")
+    context["memory_thread"]=room.get("memory_thread")
+    context["anomaly_report"]=room.get("anomaly_report")
+    context["fly_statement"]=room.get("fly_statement")
+    try:
+        room["zebra_critique"]=generate_zebra_room_critique(context,session["seed"]+809)
+    except Exception:
+        LOGGER.exception("Zebra room critique generation failed")
+        room["zebra_critique"]=""
+    room["zebra_critique"]=clean_public_text(room.get("zebra_critique"),PUBLIC_NARRATIVE_LIMITS["zebra_critique"])
+    room["zebra_critic_observation_count"]=len(zebra_observations)
+
+    art_policy_training={}
+    if session.get("launch_eligible") is True:
+        try:
+            art_policy_training=train_art_policy_from_decisions(session["brain_decisions"],epochs=3)
+        except Exception:
+            LOGGER.exception("Could not train JPGFLY learned art policy from completed room")
+            art_policy_training=get_art_policy().status()
+    else:
+        art_policy_training=get_art_policy().status()
+    visual_context["art_policy"]=art_policy_training
+
     decision_history_hash=digest(session["brain_decisions"])
     event_history_hash=digest(events)
     evaluation_history_hash=digest(session["evaluation_checkpoints"])
     fingerprint=digest({"seed":session["seed"],"decisionHistoryHash":decision_history_hash,"eventHistoryHash":event_history_hash,"evaluationHistoryHash":evaluation_history_hash})
     provenance={"archive":"JPGFLY Backrooms","creationId":"0x"+session_id,"artifactReference":artifact,"timeStandard":TIME_STANDARD,"decisionHistoryHash":decision_history_hash,"eventHistoryHash":event_history_hash,"evaluationHistoryHash":evaluation_history_hash,"visualContextHash":digest(visual_context)}
     provenance_hash=digest(provenance); completion_hash=digest({"creationId":"0x"+session_id,"state":"COMPLETED","fingerprint":fingerprint,"provenanceHash":provenance_hash})
+    # A mostly-normal Room should not be archived under a transient DUMB DUMB
+    # runtime label. Preserve the last healthy full-brain mode for the archive.
     if not archive_dumb_dumb and "DUMB DUMB" in str(session.get("brain_mode") or "").upper():
         session["brain_mode"]=session.get("_last_full_brain_mode") or configured_brain_mode()
 
@@ -1171,7 +1654,7 @@ def finalize_session(session_id:str,request:FinalizeRequest):
         "archive_dumb_dumb":archive_dumb_dumb,
     }
 
-    session.update(status="COMPLETED",state="COMPLETED",**room,completed_at=completed_at,concept=concept,thought_fragments=thoughts,text_provider=text_provider,text_error=session.get("_room_text_error"),events=events,provenance=provenance,artifact_uri=artifact_uri,duration=final_timestamp,structural_metrics=structural_metrics,visual_context=visual_context,hashes={"fingerprint":fingerprint,"provenance":provenance_hash,"completion":completion_hash},_frozen=True)
+    session.update(status="COMPLETED",state="COMPLETED",**room,completed_at=completed_at,time_standard=TIME_STANDARD,concept=concept,thought_fragments=thoughts,text_provider=text_provider,text_error=session.get("_room_text_error"),events=events,provenance=provenance,artifact_uri=artifact_uri,duration=final_timestamp,structural_metrics=structural_metrics,visual_context=visual_context,hashes={"fingerprint":fingerprint,"provenance":provenance_hash,"completion":completion_hash},_frozen=True)
     # Learn from the authoritative completed room before compact persistence drops
     # the heavy decision/event history. This keeps future rooms autobiographical
     # without storing replay payloads.
@@ -1192,8 +1675,10 @@ async def autonomous_studio_loop():
         try:
             studio_seed=secrets.randbits(32)
             studio_rng=random.Random(studio_seed^0xA5A5A5A5)
+            agent_profile=AGENT_ROTATION[len(ARTWORKS)%len(AGENT_ROTATION)]
             started=await create_session(StartRequest(
                 seed=studio_seed,
+                agent_profile=agent_profile,
                 complexity=round(studio_rng.uniform(.72,.99),3),
                 mutation=round(studio_rng.uniform(.34,.78),3),
                 density=round(studio_rng.uniform(.42,.84),3),
@@ -1212,7 +1697,21 @@ async def autonomous_studio_loop():
                 await asyncio.sleep(max(.14,min(4.0,(after-before)/1000*speed)))
             session=SESSIONS.get(CURRENT_STUDIO_ID)
             if session and session["status"]=="EVALUATING":
-                await asyncio.to_thread(finalize_session,CURRENT_STUDIO_ID,FinalizeRequest(client_fingerprint="autonomous-studio"));mark_studio_progress()
+                failed_id=CURRENT_STUDIO_ID
+                try:
+                    await asyncio.to_thread(finalize_session,failed_id,FinalizeRequest(client_fingerprint="autonomous-studio"))
+                    mark_studio_progress()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    # Integrity checks must stay strict, but one rejected room
+                    # must never stop the autonomous studio. Drop the invalid
+                    # in-memory room and immediately move on to a fresh one.
+                    LOGGER.exception("Autonomous room finalization rejected; abandoning room and continuing")
+                    SESSIONS.pop(failed_id,None)
+                    if CURRENT_STUDIO_ID==failed_id:
+                        CURRENT_STUDIO_ID=None
+                    mark_studio_progress()
             await asyncio.sleep(between)
         except asyncio.CancelledError:
             raise
@@ -1221,22 +1720,78 @@ async def autonomous_studio_loop():
             await asyncio.sleep(3)
 
 async def studio_watchdog_loop():
+    global CURRENT_STUDIO_ID
     while True:
         await asyncio.sleep(15)
         if os.environ.get("JPGFLY_AUTONOMOUS_STUDIO","true").lower()=="false":
             continue
         task=getattr(app.state,"studio_task",None)
-        if task is None or task.done():
-            if task is not None:
+        stale_seconds=max(0.0,time.monotonic()-STUDIO_PROGRESS_AT)
+        session=SESSIONS.get(CURRENT_STUDIO_ID) if CURRENT_STUDIO_ID else None
+        phase=str(session.get("status") or "") if session else ""
+        try:stale_limit=max(180,int(os.environ.get("JPGFLY_STUDIO_STALE_SECONDS","300")))
+        except ValueError:stale_limit=300
+        if phase in ("EVALUATING","FINALIZING"):
+            try:stale_limit=max(stale_limit,int(os.environ.get("JPGFLY_STUDIO_FINALIZE_STALE_SECONDS","900")))
+            except ValueError:stale_limit=max(stale_limit,900)
+        stale=stale_seconds>stale_limit
+        if task is None or task.done() or stale:
+            if task is not None and not task.done():
+                LOGGER.error("Autonomous studio made no progress for %.1fs (phase=%s, limit=%ss); restarting stale task",stale_seconds,phase or "UNKNOWN",stale_limit)
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    LOGGER.exception("Stale autonomous studio task failed while cancelling")
+            elif task is not None:
                 try:
                     error=task.exception()
                 except (asyncio.CancelledError,Exception):
                     error=None
                 if error:
                     LOGGER.error("Autonomous studio task stopped: %r",error)
+
+            stale_id=CURRENT_STUDIO_ID
+            if stale_id:
+                stale_session=SESSIONS.get(stale_id)
+                if stale_session and stale_session.get("status")!="COMPLETED":
+                    LOGGER.warning("Dropping stale in-memory studio room %s",stale_id[:8])
+                    SESSIONS.pop(stale_id,None)
+                CURRENT_STUDIO_ID=None
+
             LOGGER.warning("Restarting autonomous studio task")
             app.state.studio_task=asyncio.create_task(autonomous_studio_loop())
             mark_studio_progress()
+
+async def autonomous_launch_lab_loop():
+    manager=launch_lab_manager()
+    while True:
+        try:
+            stack=await asyncio.to_thread(launch_stack_health)
+            context=launch_agent_context()
+            manager.tick(stack,context)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            LOGGER.exception("Local autonomous launch lab loop failed")
+        await asyncio.sleep(.5)
+
+@app.on_event("startup")
+async def start_local_launch_lab():
+    if public_deployment_mode() or os.environ.get("JPGFLY_LAUNCH_LAB","true").lower()=="false":
+        return
+    launch_lab_manager()
+    app.state.launch_lab_task=asyncio.create_task(autonomous_launch_lab_loop())
+
+@app.on_event("shutdown")
+async def stop_local_launch_lab():
+    task=getattr(app.state,"launch_lab_task",None)
+    if task and not task.done():
+        task.cancel()
+        try:await task
+        except asyncio.CancelledError:pass
 
 @app.on_event("startup")
 async def start_autonomous_studio():
