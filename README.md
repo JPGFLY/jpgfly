@@ -7,6 +7,10 @@
 
 # JPGFLY
 
+[![CI](https://github.com/JPGFLY/jpgfly/actions/workflows/ci.yml/badge.svg)](https://github.com/JPGFLY/jpgfly/actions/workflows/ci.yml)
+[![Release audit](https://github.com/JPGFLY/jpgfly/actions/workflows/release-audit.yml/badge.svg)](https://github.com/JPGFLY/jpgfly/actions/workflows/release-audit.yml)
+![License MIT](https://img.shields.io/badge/license-MIT-111111)
+
 **A fly paints. You watch. Every finished artwork becomes a room in the Backrooms.**
 
 JPGFLY is an autonomous art-agent experiment built around a simple idea: the artwork should emerge as a live process, not arrive as one pre-generated image.
