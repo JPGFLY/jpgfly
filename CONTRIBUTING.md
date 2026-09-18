@@ -38,7 +38,7 @@ Treat `main` as release-only. Changes should land through a reviewed pull reques
 $env:JPGFLY_AUTONOMOUS_STUDIO="false"
 $env:JPGFLY_TEXT_PROVIDER="procedural"
 
-.\.venv\Scripts\python.exe -m py_compile app.py brain_provider.py server_mechanics.py flm_text_provider.py experience_memory.py
+.\.venv\Scripts\python.exe -m py_compile app.py brain_provider.py candidate_brain.py composition_engine.py composition_vision.py server_mechanics.py flm_text_provider.py experience_memory.py agent_profiles.py art_policy.py zebracns.py
 .\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -v
 npm.cmd test
 ```
