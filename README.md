@@ -1,4 +1,4 @@
-![JPGFLY](./jpgfly-banner-current.jpg)
+![JPGFLY](./jpgfly-banner-render.jpg)
 
 <p align="center">
   <a href="https://jpgfly.online">Website</a> ·
