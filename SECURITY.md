@@ -38,3 +38,7 @@ Typical local ports:
 Do not expose raw Ollama, FLM, MaleCNS or ZebraCNS endpoints directly to the public internet. If remote access is required, use a narrow authenticated gateway, separate credentials from application control credentials, TLS, request-size limits, and a route allowlist.
 
 The Fly Brain itself is Python and can continue painting during short language/model outages. A genuine Candidate Fly Brain decision failure switches to the independent DUMB DUMB pure-Python emergency painter. Finished Rooms remain normal through 35% actual emergency-fallback decisions; only a ratio above 35% is archived as DUMB DUMB.
+
+## Launch / signer safety
+
+The public launch-preparation code is fail-closed. The checked-in preparation/signer policies must keep execution, RPC access, key access, generic signing, browser-wallet signing, transaction count and spend authority disabled or zero by default. Treat any future change that enables one of those capabilities as a separate security review; never commit private keys, seed material, custody credentials, or production signer secrets.
