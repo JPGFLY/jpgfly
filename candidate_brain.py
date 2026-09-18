@@ -13,23 +13,76 @@ from __future__ import annotations
 import copy
 import math
 import os
+import time
+import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
 from pydantic import Field
+from zebracns import artistic_zebracns_state
+from art_policy import get_art_policy, features as art_policy_features
+from agent_profiles import get_agent_profile, normalize_agent_profile
 
 from brain_provider import (
     BrainAction,
-    BrainUnavailable,
     BrainLimits,
     BrainRequest,
     FIGURATIVE_MOTIFS,
+    CONCRETE_SUBJECT_PROGRAMS,
+    CONCRETE_MOTIFS,
     ProceduralFlyBrain,
     OllamaFlyBrain,
-    create_fly_brain as create_legacy_brain,
+    PALETTE_PRESETS,
 )
 
-BRAIN_VERSION = "JPGFLY-BRAIN/6.4-FLYBRAIN-MALECNS-FALLBACK"
+BRAIN_VERSION = "JPGFLY-BRAIN/7.1-TEMPORAL-ART-POLICY"
+
+_SUPPORT_HEALTH_AT = 0.0
+_SUPPORT_HEALTH_OK = True
+
+def _support_nodes_online(max_age: float = 2.5) -> bool:
+    """Return whether the configured Qwen/FLM support layer is reachable.
+
+    The Fly Brain itself remains local/procedural. This status only controls
+    whether the public session is labelled FULL or DUMB DUMB fallback.
+    """
+    global _SUPPORT_HEALTH_AT, _SUPPORT_HEALTH_OK
+    now = time.monotonic()
+    if now - _SUPPORT_HEALTH_AT < max_age:
+        return _SUPPORT_HEALTH_OK
+
+    checks = []
+    ollama = os.environ.get("JPGFLY_OLLAMA_URL", "").strip().rstrip("/")
+    flm = os.environ.get("JPGFLY_FLM_URL", "").strip().rstrip("/")
+    control = os.environ.get("JPGFLY_CONTROL_TOKEN", "").strip()
+    if ollama:
+        checks.append((ollama + "/api/tags", os.environ.get("JPGFLY_OLLAMA_AUTH_TOKEN", "").strip() or control))
+    if flm:
+        checks.append((flm + "/health", os.environ.get("JPGFLY_FLM_AUTH_TOKEN", "").strip() or control))
+
+    if not checks:
+        _SUPPORT_HEALTH_AT = now
+        _SUPPORT_HEALTH_OK = True
+        return True
+
+    ok = True
+    for url, token in checks:
+        headers = {"accept": "application/json"}
+        if token:
+            headers["authorization"] = "Bearer " + token
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=2.5) as response:
+                if not (200 <= int(getattr(response, "status", 200)) < 300):
+                    ok = False
+                    break
+        except Exception:
+            ok = False
+            break
+
+    _SUPPORT_HEALTH_AT = now
+    _SUPPORT_HEALTH_OK = ok
+    return ok
 
 FORM_MODES = ("NONE", "HINT", "FRAGMENT", "MUTATION", "EXPLICIT")
 
@@ -65,6 +118,50 @@ PRESSURE_STYLES = {
 }
 
 
+ARTISTIC_TEMPERAMENTS = {
+    "OBSESSIVE": {
+        "density_scale": .82, "family_cap": 5,
+        "modes": {"REVISIT": .34, "CONNECT": .12, "ERASE": .10},
+        "styles": {"echo","contour","loop","coil","hook","scallop"},
+    },
+    "VIOLENT_MINIMAL": {
+        "density_scale": .58, "family_cap": 4,
+        "modes": {"CONTRADICT": .42, "NEGATIVE_SPACE": .34, "ERASE": .26},
+        "styles": {"bold","fracture","cross","sweep","accent"},
+    },
+    "TENDER": {
+        "density_scale": .68, "family_cap": 5,
+        "modes": {"REVISIT": .24, "CONNECT": .28, "NEGATIVE_SPACE": .14},
+        "styles": {"wave","ribbon","contour","petal","meander","sweep"},
+    },
+    "ARCHITECTURAL": {
+        "density_scale": .74, "family_cap": 6,
+        "modes": {"CONNECT": .38, "CONTRADICT": .20, "NEGATIVE_SPACE": .16},
+        "styles": {"lattice","maze","segmented","web","cross","branch"},
+    },
+    "NERVOUS": {
+        "density_scale": .76, "family_cap": 6,
+        "modes": {"CONTRADICT": .34, "ERASE": .18, "REVISIT": .16},
+        "styles": {"jitter","fracture","scribble","zigzag","cluster","hook"},
+    },
+    "MONUMENTAL": {
+        "density_scale": .66, "family_cap": 4,
+        "modes": {"ABSTRACT_BUILD": .26, "CONNECT": .22, "CONTRADICT": .20},
+        "styles": {"bold","sweep","web","starburst","branch","blob"},
+    },
+    "ASCETIC": {
+        "density_scale": .50, "family_cap": 4,
+        "modes": {"NEGATIVE_SPACE": .42, "REVISIT": .20, "ERASE": .18},
+        "styles": {"accent","contour","hook","segmented","fine"},
+    },
+    "DECAYING": {
+        "density_scale": .64, "family_cap": 5,
+        "modes": {"ERASE": .36, "CONTRADICT": .26, "REVISIT": .18},
+        "styles": {"fracture","charcoal","scribble","jitter","segmented","contour"},
+    },
+}
+
+
 class CandidateBrainAction(BrainAction):
     motifMode: str = "NONE"
     suggestedForm: str = "NONE"
@@ -75,6 +172,10 @@ class CandidateBrainAction(BrainAction):
     candidateCount: int = 0
     candidateScores: list[dict[str, Any]] = Field(default_factory=list)
     malecnsActivity: dict[str, Any] = Field(default_factory=dict)
+    zebracnsActivity: dict[str, Any] = Field(default_factory=dict)
+    zebracnsCriticPressure: float = Field(default=0.0, ge=-.42, le=.42)
+    artisticTemperament: str = ""
+    artPolicy: dict[str, Any] = Field(default_factory=dict)
 
 
 @dataclass
@@ -87,6 +188,8 @@ class CandidateFlyBrain(ProceduralFlyBrain):
         self._candidate_serial = 0
         self._explicit_forms: list[tuple[int, str]] = []
         experience = self.experience or {}
+        self.agent_profile = normalize_agent_profile(experience.get("_agent_profile"))
+        self.agent_spec = get_agent_profile(self.agent_profile)
         self.conceptual_strength = max(0.0, min(0.22, float(experience.get("conceptual_strength", 0) or 0)))
         self.context_pressures = dict(experience.get("conceptual_pressures") or {})
         self.memory_context = [name for name, _ in sorted(self.context_pressures.items(), key=lambda item: (-float(item[1]), item[0]))[:4]]
@@ -97,6 +200,13 @@ class CandidateFlyBrain(ProceduralFlyBrain):
         self._brush_counts: dict[str, int] = {}
         self._technique_counts: dict[str, int] = {}
         self._context_counts: dict[str, int] = {}
+        self._art_history: list[dict[str, Any]] = []
+        # ZebraCNS is an in-loop critic: it can pressure artistic candidate
+        # ranking and finish timing, but never writes stroke mechanics directly.
+        # Keep the critic bounded so disagreement changes the work without
+        # replacing the Fly as the final actor.
+        self.zebracns_strength=max(0.0,min(0.40,float(os.environ.get("JPGFLY_ZEBRACNS_STRENGTH",".26") or .26)))
+        self.last_zebracns_state: dict[str, Any] = {}
         def aggregate_recent(key):
             table: dict[str,float] = {}
             for room in self.recent_rooms[-4:]:
@@ -110,6 +220,49 @@ class CandidateFlyBrain(ProceduralFlyBrain):
         self._recent_brush_weights=aggregate_recent("brushes")
         self._recent_technique_weights=aggregate_recent("techniques")
         self.room_tension = self._choose_room_tension()
+        recent_temperaments=[
+            str(room.get("artistic_temperament") or "")
+            for room in self.recent_rooms[-4:]
+            if room.get("artistic_temperament")
+        ]
+        temperament_pool=[name for name in ARTISTIC_TEMPERAMENTS if name not in recent_temperaments]
+        self.artistic_temperament=self.rng.choice(temperament_pool or list(ARTISTIC_TEMPERAMENTS))
+        temperament=ARTISTIC_TEMPERAMENTS[self.artistic_temperament]
+        self.target_families=min(int(getattr(self,"target_families",6) or 6),int(temperament["family_cap"]))
+        self.density=max(.10,min(.86,float(self.density)*float(temperament["density_scale"])))
+        if self.artistic_temperament in {"VIOLENT_MINIMAL","ASCETIC","DECAYING"}:
+            self.personality["eraseBias"]=max(float(self.personality.get("eraseBias",0)),.23)
+            self.personality["crowdAvoidance"]=max(float(self.personality.get("crowdAvoidance",0)),.76)
+        if self.artistic_temperament=="OBSESSIVE":
+            self.personality["returnBias"]=max(float(self.personality.get("returnBias",0)),.84)
+        if self.artistic_temperament=="MONUMENTAL":
+            self.personality["scaleBias"]=max(float(self.personality.get("scaleBias",0)),.74)
+
+    def _apply_agent_profile(self, action: BrainAction, index: int) -> BrainAction:
+        """Constrain a proposal to the room-born artist's declared vocabulary."""
+        spec = self.agent_spec
+        if self.agent_profile == "jpgfly":
+            return action
+        serial = max(0, int(self.decision_count)) + int(index)
+        styles = tuple(spec.get("styles") or ())
+        brushes = tuple(spec.get("brushes") or ())
+        techniques = tuple(spec.get("techniques") or ())
+        palettes = tuple(spec.get("palettes") or ())
+        if styles:
+            action.movementStyle = styles[(serial * 3 + index) % len(styles)]
+        if brushes:
+            action.brushTool = brushes[(serial * 5 + index) % len(brushes)]
+        if techniques:
+            action.technique = techniques[(serial * 7 + index) % len(techniques)]
+        if palettes:
+            palette = palettes[(serial + index) % len(palettes)]
+            action.paletteName = palette
+            colors = tuple(PALETTE_PRESETS.get(palette) or ())
+            if colors:
+                action.color = colors[(serial * 2 + index) % len(colors)]
+        if self.agent_profile == "dreamfly":
+            action.eraseIntent = False if serial % 5 else action.eraseIntent
+        return action
 
     def _choose_room_tension(self) -> str:
         tensions = tuple(TENSION_PRESSURES)
@@ -149,6 +302,9 @@ class CandidateFlyBrain(ProceduralFlyBrain):
             "rooms_seen": int((self.experience or {}).get("rooms_seen", 0) or 0),
             "readings_seen": int((self.experience or {}).get("readings_seen", 0) or 0),
             "palette_name": str(getattr(self, "palette_name", "") or ""),
+            "material_style": str(getattr(self, "material_style", "ink_line") or "ink_line"),
+            "render_effect": str(getattr(self, "render_effect", "MATTE") or "MATTE"),
+            "paint_depth": round(float(getattr(self, "paint_depth", .08) or .08), 3),
             "composition_mode": str(getattr(self, "composition_mode", "") or ""),
             "subject_program": str(getattr(self, "subject_program_name", "") or ""),
             "archetype": str(getattr(self, "archetype", "") or ""),
@@ -164,6 +320,10 @@ class CandidateFlyBrain(ProceduralFlyBrain):
             "decision_mode_counts": dict(self._mode_counts),
             "brush_counts": dict(self._brush_counts),
             "technique_counts": dict(self._technique_counts),
+            "zebracns": self._zebracns_public_activity(self.last_zebracns_state),
+            "zebracns_art_bias_strength": round(self.zebracns_strength, 4),
+            "artistic_temperament": self.artistic_temperament,
+            "art_policy": get_art_policy().status(),
         }
 
     def _decision_mode(self, action: BrainAction) -> str:
@@ -199,20 +359,48 @@ class CandidateFlyBrain(ProceduralFlyBrain):
             else 10_000
         )
 
-        # Explicit primitives are an option, never the default. Early phases almost
-        # never choose them; repeated literal objects receive an additional penalty.
-        explicit_probability = 0.008
-        if phase in {"DEVELOPMENT", "CONTRAST", "REFINEMENT"}:
-            explicit_probability += 0.018
-        if getattr(clone, "goal", "") == "JOKE":
-            explicit_probability += 0.008
-        if explicit_gap < 42:
-            explicit_probability *= 0.08
-        if recent_same:
-            explicit_probability *= 0.05
+        # Concrete rooms must visibly contain recognizable things. Abstract
+        # marks still surround and mutate those things, but they are no longer
+        # allowed to dominate every decision.
+        subject_name = str(getattr(clone, "subject_program_name", "") or "")
+        readability = str(getattr(clone, "readability_mode", "") or "")
+        subject_led = subject_name in set(CONCRETE_SUBJECT_PROGRAMS) or form in set(CONCRETE_MOTIFS)
 
-        probe = clone.rng.random()
-        if probe < explicit_probability:
+        subject_bias = 0.24 if subject_led else 0.035
+        if subject_name in {"AFTER_DARK","AFTER_DARK_EXTENDED","CRYPTO_MARKET","DEGEN_TERMINAL","PEOPLE_AND_POSES","PEOPLE_EVERYWHERE"}:
+            subject_bias += 0.08
+
+        explicit_probability = 0.08 + subject_bias
+        if phase in {"STRUCTURE", "DEVELOPMENT"}:
+            explicit_probability += 0.10
+        elif phase in {"CONTRAST", "REFINEMENT"}:
+            explicit_probability += 0.055
+        elif phase == "EXPLORATION":
+            explicit_probability *= 0.72
+        elif phase == "RESOLUTION":
+            explicit_probability *= 0.48
+
+        if readability == "LITERAL":
+            explicit_probability += 0.14
+        elif readability == "STYLIZED":
+            explicit_probability += 0.08
+        elif readability in {"HIDDEN", "MUTATED"}:
+            explicit_probability *= 0.76
+
+        # Never let a concrete room go dozens of decisions without a readable anchor.
+        if subject_led and explicit_gap >= 12 and phase not in {"RESOLUTION"}:
+            if not recent_same or clone.rng.random() < 0.58:
+                return "EXPLICIT", form
+
+        if explicit_gap < 5:
+            explicit_probability *= 0.18
+        elif explicit_gap < 9:
+            explicit_probability *= 0.55
+        if recent_same:
+            explicit_probability *= 0.44
+
+        explicit_probability = max(0.035, min(0.56, explicit_probability))
+        if clone.rng.random() < explicit_probability:
             return "EXPLICIT", form
         if transform in {"distort", "cross", "interrupt", "loose_mirror"}:
             return "MUTATION", form
@@ -224,6 +412,7 @@ class CandidateFlyBrain(ProceduralFlyBrain):
         evaluation = action.evaluation or {}
         coverage = float(observation.get("canvasOccupancy", 0) or 0)
         occupied_regions = int(observation.get("occupiedRegions", 0) or 0)
+
         intersections = int(observation.get("intersections", 0) or 0)
         families = len(observation.get("familyCounts") or {})
         meaningful = float(observation.get("meaningfulChangeRate", 0) or 0)
@@ -237,22 +426,23 @@ class CandidateFlyBrain(ProceduralFlyBrain):
             "mature": self.decision_count >= minimum_decisions,
             "coverage": coverage >= 0.16,
             "regions": occupied_regions >= 4,
-            "families": families >= 5,
+            "families": families >= 3,
             "intersections": intersections >= 4,
             "meaningful": meaningful >= 0.30,
-            "modes": len(self._mode_counts) >= 4,
-            "brushes": len(self._brush_counts) >= 3,
-            "techniques": len(self._technique_counts) >= 3,
+            "modes": len(self._mode_counts) >= 3,
+            "brushes": len(self._brush_counts) >= 2,
+            "techniques": len(self._technique_counts) >= 2,
             "context_passes": len(self._context_counts) >= 4,
+            "editing": sum(int(self._mode_counts.get(name,0) or 0) for name in ("ERASE","CONTRADICT","NEGATIVE_SPACE")) >= max(8,int(self.decision_count*.055)),
             "composition": composition_score >= 0.56,
-            "spread": regional_spread >= 0.32,
+            "spread": regional_spread >= 0.24,
             "director": director_ready,
             "readiness": readiness >= 0.68,
         }
         artistic_signals = sum(
             1 for key in (
                 "coverage","regions","families","intersections","meaningful",
-                "modes","brushes","techniques","composition","spread"
+                "modes","brushes","techniques","editing","composition","spread"
             )
             if checks[key]
         )
@@ -275,6 +465,64 @@ class CandidateFlyBrain(ProceduralFlyBrain):
             "regionalSpread": round(regional_spread, 3),
             "minimumDecisions": minimum_decisions,
         }
+
+    @staticmethod
+    def _zebracns_public_activity(state: dict[str, Any] | None) -> dict[str, Any]:
+        if not state:
+            return {}
+        signals=state.get("signals") if isinstance(state.get("signals"),dict) else {}
+        return {
+            "dataset": str(state.get("dataset") or "")[:120],
+            "frame": int(state.get("frame",0) or 0),
+            "sampled_neurons": int(state.get("sampled_neurons",0) or 0),
+            "action": str(state.get("action") or "NONE")[:24],
+            "signals": {
+                key: round(max(0.0,min(1.0,float(signals.get(key,0) or 0))),4)
+                for key in (
+                    "arousal","persistence","exploration","novelty_seek",
+                    "attention_lock","escape_drive","repetition_drive",
+                    "state_instability","completion_pressure","tempo"
+                )
+            },
+        }
+
+    def _zebracns_candidate_bias(
+        self,
+        action: BrainAction,
+        mode: str,
+        form_mode: str,
+        state: dict[str, Any] | None,
+    ) -> float:
+        """High-level state bias only; never rewrites physical stroke mechanics."""
+        if not state or self.zebracns_strength<=0:
+            return 0.0
+        signals=state.get("signals") if isinstance(state.get("signals"),dict) else {}
+        def sig(name,default=0.0):
+            try:return max(0.0,min(1.0,float(signals.get(name,default) or 0)))
+            except (TypeError,ValueError):return default
+        novelty=sig("novelty_seek",sig("exploration",0.0))
+        persistence=sig("persistence")
+        attention=sig("attention_lock")
+        escape=sig("escape_drive")
+        repetition=sig("repetition_drive")
+        instability=sig("state_instability",sig("exploration",0.0))
+        completion=sig("completion_pressure")
+        bias=0.0
+        if mode=="CONTRADICT":bias+=novelty*.72+escape*.34+instability*.58
+        elif mode=="NEGATIVE_SPACE":bias+=novelty*.34+escape*.76
+        elif mode=="REVISIT":bias+=persistence*.66+attention*.58+repetition*.42-novelty*.16
+        elif mode=="CONNECT":bias+=persistence*.34+attention*.26+repetition*.18
+        elif mode=="ERASE":bias+=instability*.25+escape*.18
+        elif mode=="ABSTRACT_BUILD":bias+=novelty*.24+sig("arousal")*.12
+        elif mode=="FINISH":bias+=completion*1.18+persistence*.16-novelty*.56-instability*.42
+        transform=str(getattr(action,"motifTransform","none") or "none")
+        if transform in {"repeat","loose_mirror","extend"}:bias+=repetition*.24
+        if transform in {"interrupt","cross","distort"}:bias+=instability*.22+novelty*.18
+        if form_mode=="EXPLICIT":bias-=novelty*.10
+        # The critic can matter, but one neural frame must never dominate the
+        # rest of the candidate score. Both positive and negative pressure are
+        # capped before the Fly makes its final choice.
+        return max(-.42,min(.42,bias*self.zebracns_strength))
 
     def _candidate_score(
         self,
@@ -310,6 +558,56 @@ class CandidateFlyBrain(ProceduralFlyBrain):
         score += novelty * 0.9
         score += float(getattr(self, "drives", {}).get("novelty", 0.5)) * 0.25
 
+        if self.agent_profile != "jpgfly":
+            spec = self.agent_spec
+            score += 1.15 if action.movementStyle in set(spec.get("styles") or ()) else -4.5
+            score += .72 if action.brushTool in set(spec.get("brushes") or ()) else -2.4
+            score += .48 if action.technique in set(spec.get("techniques") or ()) else -1.6
+            score += float((spec.get("form_bias") or {}).get(form_mode, 0.0))
+
+        # Vision is advisory and only scores future candidates; it never
+        # executes strokes or participates in finish-quality validation.
+        vision = observation.get("visionComposition") or {}
+        if isinstance(vision, dict) and vision:
+            goal = str(vision.get("nextGoal") or "")
+            goal_modes = {
+                "CONNECT_SUBJECTS": {"CONNECT": .95, "REVISIT": .42, "ABSTRACT_BUILD": -.42},
+                "STRENGTHEN_FOCAL": {"REVISIT": .78, "CONNECT": .34, "ABSTRACT_BUILD": -.24},
+                "CLARIFY_SUBJECT": {"REVISIT": .70, "CONNECT": .28, "ABSTRACT_BUILD": -.38},
+                "BUILD_DEPTH": {"REVISIT": .42, "CONTRADICT": .48, "CONNECT": .28},
+                "OPEN_NEGATIVE_SPACE": {"NEGATIVE_SPACE": .86, "ERASE": .62, "ABSTRACT_BUILD": -.52},
+                "DEVELOP_COUNTERWEIGHT": {"CONNECT": .58, "CONTRADICT": .52},
+                "SIMPLIFY": {"ERASE": .72, "NEGATIVE_SPACE": .48, "ABSTRACT_BUILD": -.62},
+                "RESOLVE": {"REVISIT": .46, "CONNECT": .34, "ERASE": .28, "ABSTRACT_BUILD": -.46},
+            }
+            score += float(goal_modes.get(goal, {}).get(mode, 0.0))
+            try:
+                target = vision.get("target") or [.5, .5]
+                secondary = vision.get("secondaryTarget") or target
+                chosen = secondary if context_pass in {"COUNTER","INTEGRATE"} and mode in {"CONNECT","CONTRADICT","ABSTRACT_BUILD"} else target
+                tx = max(0.0,min(1.0,float(chosen[0]))) * 800.0
+                ty = max(0.0,min(1.0,float(chosen[1]))) * 500.0
+                pos = observation.get("currentForelegPosition") or [400,250]
+                px,py=float(pos[0]),float(pos[1])
+                heading=float(action.targetDirection)
+                distance=max(0.0,float(action.movementDistance))
+                ex=px+math.cos(heading)*distance
+                ey=py+math.sin(heading)*distance
+                before=math.hypot(tx-px,ty-py)
+                after=math.hypot(tx-ex,ty-ey)
+                score += max(-.55,min(.72,(before-after)/180.0))
+            except (TypeError,ValueError,IndexError):
+                pass
+            try:
+                readability=float(vision.get("readability",1) or 1)
+                relations=float(vision.get("relations",1) or 1)
+                if form_mode=="EXPLICIT" and readability<.58:
+                    score += (.58-readability)*1.15
+                if mode=="CONNECT" and relations<.62:
+                    score += (.62-relations)*1.30
+            except (TypeError,ValueError):
+                pass
+
         coverage = float(observation.get("canvasOccupancy", 0) or 0)
         occupied_regions = int(observation.get("occupiedRegions", 0) or 0)
 
@@ -324,7 +622,7 @@ class CandidateFlyBrain(ProceduralFlyBrain):
         elif self.room_tension == "SYSTEM_VS_NOISE":
             score += 0.30 if action.movementStyle in {"lattice","maze","segmented","scribble","fracture","jitter"} else 0
         elif self.room_tension == "FIGURE_VS_FIELD":
-            score += 0.24 if form_mode in {"HINT","FRAGMENT","MUTATION"} or mode in {"ABSTRACT_BUILD","NEGATIVE_SPACE"} else 0
+            score += 0.34 if form_mode == "EXPLICIT" else 0.18 if form_mode in {"HINT","FRAGMENT","MUTATION"} else 0.12 if mode in {"ABSTRACT_BUILD","NEGATIVE_SPACE"} else 0
 
         if coverage < 0.16:
             if mode in {"ABSTRACT_BUILD","CONNECT","CONTRADICT"}:
@@ -402,21 +700,81 @@ class CandidateFlyBrain(ProceduralFlyBrain):
         technique_seen = int(self._technique_counts.get(action.technique, 0) or 0)
         if self.decision_count > 80:
             score += .18 if mode_seen < max(2, self.decision_count * .08) else -.12
-            score += .12 if brush_seen < max(2, self.decision_count * .07) else -.08
-            score += .12 if technique_seen < max(2, self.decision_count * .07) else -.08
+            # Coherence beats tool collecting. Reusing an established brush is
+            # slightly favored; introducing a third+ brush is actively discouraged.
+            if brush_seen > 0:
+                score += .10
+            elif len(self._brush_counts) >= 2:
+                score -= .42
+            elif len(self._brush_counts) == 1:
+                score -= .10
+            if technique_seen > 0:
+                score += .05
+            elif len(self._technique_counts) >= 3:
+                score -= .18
 
         if form_mode == "HINT":
-            score += 0.12
+            score += 0.05
         elif form_mode == "FRAGMENT":
-            score += 0.18 + float(getattr(self, "mutation", 0.4)) * 0.08
+            score += 0.08 + float(getattr(self, "mutation", 0.4)) * 0.05
         elif form_mode == "MUTATION":
-            score += 0.22 + float(getattr(self, "mutation", 0.4)) * 0.18
+            score += 0.10 + float(getattr(self, "mutation", 0.4)) * 0.08
         elif form_mode == "EXPLICIT":
-            score -= 1.7
-            if self.decision_count < max(45, int(self.desired_decisions * 0.22)):
-                score -= 1.0
+            concrete_form = suggested_form in set(CONCRETE_MOTIFS)
+            concrete_room = str(getattr(clone, "subject_program_name", "") or "") in set(CONCRETE_SUBJECT_PROGRAMS)
+
+            # Concrete subjects are a core visual language, not a failure mode.
+            # Previous builds penalized EXPLICIT by -1.7 (and another -1.0 early),
+            # which made the selector discard faces/objects even when generated.
+            if concrete_form or concrete_room:
+                score += 0.92
+                if context_pass in {"GROUND","ECHO","COUNTER","INTEGRATE"}:
+                    score += 0.28
+                if coverage < 0.38:
+                    score += 0.22
+            else:
+                score -= 0.18
+
+            # Repetition is still discouraged, but a readable subject is not.
             if any(suggested_form == old for _, old in self._explicit_forms[-4:]):
-                score -= 1.2
+                score -= 0.48
+
+        temperament=ARTISTIC_TEMPERAMENTS.get(self.artistic_temperament,{})
+        score+=float((temperament.get("modes") or {}).get(mode,0) or 0)
+        if action.movementStyle in set(temperament.get("styles") or ()):
+            score+=.24
+        if len(self.style_counts)>=self.target_families and action.movementStyle not in self.style_counts:
+            score-=.58
+        if self.decision_count>36:
+            if len(self._brush_counts)>=2 and action.brushTool not in self._brush_counts:
+                score-=.58
+            elif action.brushTool in self._brush_counts:
+                score+=.08
+            if len(self._technique_counts)>=3 and action.technique not in self._technique_counts:
+                score-=.22
+
+        regional=float(observation.get("regionalContrast",0) or 0)
+        if regional<.12 and mode in {"CONTRADICT","NEGATIVE_SPACE"}:
+            score+=.20
+        elif regional>.72 and mode in {"CONNECT","REVISIT"}:
+            score+=.16
+
+        if context_pass=="EDIT_RESOLVE":
+            if mode in {"ERASE","NEGATIVE_SPACE","REVISIT"}:
+                score+=.18
+            if mode=="ABSTRACT_BUILD":
+                score-=.24
+
+        if self.artistic_temperament in {"VIOLENT_MINIMAL","ASCETIC"}:
+            if coverage>.46 and mode=="ABSTRACT_BUILD":
+                score-=.42
+            if coverage>.34 and mode in {"NEGATIVE_SPACE","ERASE"}:
+                score+=.28
+        elif self.artistic_temperament=="MONUMENTAL":
+            if float(action.movementDistance or 0)>=70:
+                score+=.20
+            if float(action.scale or 1)>=1.15:
+                score+=.16
 
         # Avoid deterministic "best move every time". Each candidate gets a small,
         # seeded perturbation before weighted selection.
@@ -458,10 +816,14 @@ class CandidateFlyBrain(ProceduralFlyBrain):
             memoryContext=list(self.memory_context),
             candidateCount=len(summaries),
             candidateScores=summaries,
+            artisticTemperament=self.artistic_temperament,
+            artPolicy=get_art_policy().status(),
         )
 
     def decide(self, request: BrainRequest, limits: BrainLimits):
         observation = request.observation
+        zebra_state=artistic_zebracns_state()
+        self.last_zebracns_state=zebra_state
         hard = self.hard_limit(observation, limits)
         if hard:
             action = ProceduralFlyBrain.decide(self, request, limits)
@@ -475,6 +837,10 @@ class CandidateFlyBrain(ProceduralFlyBrain):
                 memoryContext=list(self.memory_context),
                 candidateCount=1,
                 candidateScores=[{"mode": "FINISH", "score": 99.0}],
+                zebracnsActivity=self._zebracns_public_activity(zebra_state),
+                zebracnsCriticPressure=self._zebracns_candidate_bias(action,"FINISH","NONE",zebra_state),
+                artisticTemperament=self.artistic_temperament,
+                artPolicy=get_art_policy().status(),
             )
 
         context_pass = self._context_pass()
@@ -489,11 +855,31 @@ class CandidateFlyBrain(ProceduralFlyBrain):
                 clone.rng.random()
 
             action = ProceduralFlyBrain.decide(clone, request, limits)
+            action = clone._apply_agent_profile(action, index)
             mode = self._decision_mode(action)
             form_mode, suggested_form = self._form_mode(action, clone, index)
+            if clone.agent_profile == "dreamfly" and form_mode == "EXPLICIT":
+                form_mode = "MUTATION"
             score = self._candidate_score(
                 action, observation, mode, form_mode, suggested_form, clone, index, context_pass
             )
+            score += self._zebracns_candidate_bias(action,mode,form_mode,zebra_state)
+            policy_vote=get_art_policy().vote(art_policy_features(
+                observation,action.model_dump(),mode,context_pass,zebra_state,
+                history=self._art_history[-8:],room_context={"artistic_temperament":self.artistic_temperament},
+            ))
+            score += float(policy_vote.get("value_vote",0) or 0)
+            current_tension=(float(observation.get("densityContrast",0) or 0)+float(observation.get("regionalContrast",0) or 0))*.5
+            overwork=float(observation.get("overworkRisk",0) or 0);revision=float(observation.get("revisionPotential",0) or 0);hierarchy=float(observation.get("hierarchyStrength",0) or 0)
+            if current_tension<.34:score += max(0.0,float(policy_vote.get("tension",0) or 0))*.26
+            elif current_tension>.66:score += max(0.0,-float(policy_vote.get("tension",0) or 0))*.18
+            restraint=float(policy_vote.get("restraint",0) or 0)
+            if overwork>.44 and restraint>0:score += restraint*.24 if mode in {"NEGATIVE_SPACE","ERASE","REVISIT"} else -restraint*.12
+            elif float(observation.get("canvasOccupancy",0) or 0)<.20 and restraint<0 and mode in {"ABSTRACT_BUILD","CONNECT"}:score += (-restraint)*.18
+            edit_bias=float(policy_vote.get("edit_bias",0) or 0)
+            if revision>.42 and edit_bias>0 and mode in {"ERASE","CONTRADICT","NEGATIVE_SPACE"}:score += edit_bias*.24
+            focus=float(policy_vote.get("focus_commitment",0) or 0)
+            if hierarchy<.42 and focus>0 and mode in {"REVISIT","CONNECT"}:score += focus*.20
             candidates.append(
                 {
                     "clone": clone,
@@ -519,6 +905,10 @@ class CandidateFlyBrain(ProceduralFlyBrain):
                 finish_action, observation, "FINISH", "NONE", "NONE",
                 finish_clone, count, context_pass
             )
+            finish_score += self._zebracns_candidate_bias(finish_action,"FINISH","NONE",zebra_state)
+            finish_policy=get_art_policy().vote(art_policy_features(observation,finish_action.model_dump(),"FINISH",context_pass,zebra_state,history=self._art_history[-8:],room_context={"artistic_temperament":self.artistic_temperament}))
+            finish_score += float(finish_policy.get("value_vote",0) or 0)
+            if float(observation.get("overworkRisk",0) or 0)>.55:finish_score += max(0.0,float(finish_policy.get("restraint",0) or 0))*.22
             candidates.append({
                 "clone": finish_clone,
                 "action": finish_action,
@@ -574,6 +964,13 @@ class CandidateFlyBrain(ProceduralFlyBrain):
             summaries,
             context_pass,
         )
+        if zebra_state:
+            action.zebracnsActivity=self._zebracns_public_activity(zebra_state)
+            action.zebracnsCriticPressure=self._zebracns_candidate_bias(
+                chosen["action"],chosen["mode"],chosen["form_mode"],zebra_state
+            )
+            zebra_label=" · ZEBRA CRITIC" if self.zebracns_strength<=0 else " · ZEBRA CRITIC LOOP"
+            self.mode="LOCAL PROCEDURAL FLY BRAIN · CANDIDATE PAINTER · MEMORY + CONTEXT"+zebra_label
         malecns_enabled=os.environ.get("JPGFLY_MALECNS_ENABLED","").strip().lower() in {"1","true","yes","on"} or bool(os.environ.get("JPGFLY_MALECNS_URL","").strip())
         if malecns_enabled:
             bridge=OllamaFlyBrain(self)
@@ -590,7 +987,20 @@ class CandidateFlyBrain(ProceduralFlyBrain):
                     )
                     if key in bias
                 }
-                self.mode="LOCAL PROCEDURAL FLY BRAIN · CANDIDATE PAINTER · MEMORY + CONTEXT · MALECNS"
+                zebra_label=(" · ZEBRA CRITIC" if self.zebracns_strength<=0 else " · ZEBRACNS ART BIAS") if zebra_state else ""
+                self.mode="LOCAL PROCEDURAL FLY BRAIN · CANDIDATE PAINTER · MEMORY + CONTEXT"+zebra_label+" · MALECNS"
+
+        # Qwen/FLM are support nodes around the local art brain. If those nodes
+        # are unreachable, keep painting locally but identify the session
+        # truthfully as DUMB DUMB fallback. The label automatically clears when
+        # the support layer becomes reachable again.
+        if not _support_nodes_online():
+            self.mode="DUMB DUMB MODE · PURE PYTHON FALLBACK"
+        elif "DUMB DUMB MODE" in str(self.mode).upper():
+            zebra_label=(" · ZEBRA CRITIC" if self.zebracns_strength<=0 else " · ZEBRACNS ART BIAS") if zebra_state else ""
+            self.mode="LOCAL PROCEDURAL FLY BRAIN · CANDIDATE PAINTER · MEMORY + CONTEXT"+zebra_label+(" · MALECNS" if action.malecnsActivity else "")
+        self._art_history.append({"observation":dict(observation),"action":action.model_dump()})
+        self._art_history=self._art_history[-16:]
         return action
 
 
@@ -602,22 +1012,20 @@ def _experience_without_literal_motif_lockin(experience: dict[str, Any] | None) 
     return value
 
 
-def create_fly_brain(seed, *, complexity=.96, mutation=.42, density=.64, experience=None):
-    if os.environ.get("JPGFLY_BRAIN_PROVIDER", "procedural").lower() == "ollama":
-        return create_legacy_brain(
-            seed,
-            complexity=complexity,
-            mutation=mutation,
-            density=density,
-            experience=_experience_without_literal_motif_lockin(experience),
-        )
-
+def create_fly_brain(seed, *, complexity=.96, mutation=.42, density=.64, experience=None, agent_profile="jpgfly"):
+    # One painting authority for every room-born artist. Qwen remains an
+    # advisory vision/composition service; it is never swapped in as a second
+    # stroke-producing brain because that would bypass agent vocabularies,
+    # room memory and the candidate-selection invariants.
+    agent_profile = normalize_agent_profile(agent_profile)
     if experience is None:
         try:
             from experience_memory import visual_bias
             experience = visual_bias()
         except Exception:
             experience = {}
+    experience = dict(experience or {})
+    experience["_agent_profile"] = agent_profile
 
     return CandidateFlyBrain(
         seed,
@@ -629,6 +1037,4 @@ def create_fly_brain(seed, *, complexity=.96, mutation=.42, density=.64, experie
 
 
 def configured_brain_mode():
-    if os.environ.get("JPGFLY_BRAIN_PROVIDER", "procedural").lower() == "ollama":
-        return "OLLAMA REQUESTED — VERIFIED PER SESSION"
-    return "LOCAL PROCEDURAL FLY BRAIN · 8 CANDIDATES / MEMORY-CONTEXT CHOICE"
+    return "LOCAL PROCEDURAL FLY BRAIN · 8 CANDIDATES / MEMORY-CONTEXT CHOICE · QWEN VISION ADVISORY"
