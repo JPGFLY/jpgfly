@@ -55,10 +55,13 @@ def _paths():
     if run_raw:
         run = Path(run_raw).expanduser().resolve()
     else:
+        room_v3 = root / "runs" / "jpgfly-room-v3"
         room_v2 = root / "runs" / "jpgfly-room-v2"
         preferred = root / "runs" / "jpgfly-style-v1"
         legacy = root / "runs" / "conversation-v2"
-        if room_v2.is_dir():
+        if room_v3.is_dir():
+            run = room_v3.resolve()
+        elif room_v2.is_dir():
             run = room_v2.resolve()
         elif preferred.is_dir():
             run = preferred.resolve()
@@ -94,7 +97,19 @@ def _model():
 
 def _clean(value: Any, limit: int) -> str:
     text = re.sub(r"\s+", " ", str(value or "")).strip()
-    return text[:limit].rstrip()
+    text = re.sub(r"^(?:```[A-Za-z0-9_-]*\s*|#{1,6}\s+|>\s+)", "", text).strip()
+    if len(text) > limit:
+        cut = text[:limit]
+        if limit < len(text) and not text[limit].isspace():
+            boundary = cut.rfind(" ")
+            if boundary >= max(0, int(limit * .70)):
+                cut = cut[:boundary]
+        text = cut
+    text = text.rstrip(" \t\r\n`#*_>-–—/:;,")
+    parts = text.rsplit(" ", 1)
+    if len(parts) == 2 and len(parts[1]) == 1 and parts[1].isalpha() and parts[1] != "I":
+        text = parts[0].rstrip()
+    return text
 
 
 def _generate_remote(prompt: str, seed: int, max_tokens: int) -> str:
@@ -186,8 +201,13 @@ def _room_brief(context: dict[str, Any]) -> str:
             title = room.get("room_title") or room.get("room_code")
             if title:
                 earlier.append(str(title))
+    agent=context.get("agent") if isinstance(context.get("agent"),dict) else {}
+    agent_name=str(context.get("agent_name") or agent.get("name") or "JPGFLY").strip()[:48] or "JPGFLY"
+    agent_profile=str(context.get("agent_profile") or agent.get("profile") or "jpgfly").strip().casefold()[:24] or "jpgfly"
     lines = [
         f"room={context.get('room_code') or ''}",
+        f"active artist={agent_name} ({agent_profile})",
+        "required writing subject=" + str((context.get("writing_theme") or {}).get("instruction") or "none"),
         "dominant forms=" + ", ".join(f"{k}:{v}" for k, v in motifs) if motifs else "dominant forms=none named",
         "composition=" + ", ".join(f"{k}:{v}" for k, v in compositions) if compositions else "composition=unknown",
         "goals=" + ", ".join(f"{k}:{v}" for k, v in goals) if goals else "goals=unknown",
@@ -220,16 +240,7 @@ def _room_brief(context: dict[str, Any]) -> str:
         lines.append("recent fly notes=" + " / ".join(commentary))
     if earlier:
         lines.append("recent room titles=" + ", ".join(earlier))
-    ollama_draft=context.get("ollama_draft")
-    if isinstance(ollama_draft,dict):
-        draft_bits=[]
-        for key in ("room_title","room_description","anomaly_report","fly_statement"):
-            value=_clean(ollama_draft.get(key),700)
-            if value:
-                draft_bits.append(f"{key}={value}")
-        if draft_bits:
-            lines.append("OLLAMA DIRECTOR DRAFT (use as material, not final wording)="+" | ".join(draft_bits))
-    return "\n".join(lines)[:5200]
+    return "\n".join(lines)[:1800]
 
 
 def _recent_text(context: dict[str, Any]) -> str:
@@ -249,6 +260,9 @@ def _recent_text(context: dict[str, Any]) -> str:
 
 
 def _interpretive_lens(context: dict[str, Any], seed: int, *, live: bool=False) -> str:
+    forced=context.get("writing_theme") if isinstance(context.get("writing_theme"),dict) else {}
+    if forced.get("prompt"):
+        return str(forced["prompt"])
     visual=context.get("visual_context") or {}
     register=str(visual.get("content_register") or "FORMAL")
     pools={
@@ -297,8 +311,8 @@ def _interpretive_lens(context: dict[str, Any], seed: int, *, live: bool=False) 
     choices=list(pools.get(register,pools["FORMAL"]))
     recent=_recent_text(context)
 
-    # Crypto/protocol, explicit eroticism and comedy are occasional lenses, not
-    # JPGFLY's default personality. Do not repeat them in adjacent rooms.
+    # Legacy fallback only: normal finished rooms now receive an authoritative
+    # writing_theme in app.py. These remain available for callers without one.
     rare=[
         ("value, scarcity, exchange and collective belief without turning the room into financial commentary",
          ("money","scarcity","value")),
@@ -383,27 +397,24 @@ def _focused_memory(context: dict[str, Any], seed: int, lens: str="") -> str:
 
 def _artwork_memory(context: dict[str, Any]) -> str:
     lines = []
-    for room in (context.get("earlier_rooms") or [])[-4:]:
+    for room in (context.get("earlier_rooms") or [])[-2:]:
         if not isinstance(room, dict):
             continue
-        title = _clean(room.get("room_title") or room.get("room_code"), 120)
-        description = _clean(room.get("room_description"), 360)
-        statement = _clean(room.get("fly_statement"), 220)
-        thread = _clean(room.get("memory_thread"), 300)
-        concept = _clean(room.get("concept"), 220)
+        title = _clean(room.get("room_title") or room.get("room_code"), 90)
+        description = _clean(room.get("room_description"), 180)
+        statement = _clean(room.get("fly_statement"), 120)
+        thread = _clean(room.get("memory_thread"), 160)
         if not title:
             continue
         bits = [f"earlier room: {title}"]
         if description:
             bits.append("description=" + description)
         if thread:
-            bits.append("memory thread=" + thread)
+            bits.append("memory=" + thread)
         if statement:
-            bits.append("fly statement=" + statement)
-        elif concept:
-            bits.append("structure=" + concept)
+            bits.append("voice=" + statement)
         lines.append(" | ".join(bits))
-    return "\n".join(lines)[:2200]
+    return "\n".join(lines)[:720]
 
 
 def _candidate_score(result: dict[str, str]) -> float:
@@ -494,89 +505,72 @@ def _strip_field_output(text: str, labels: tuple[str, ...] = ()) -> str:
     return _clean(value, 4000)
 
 
-def _field_prompt(kind: str, brief: str, memory: str, artwork_memory: str, angle: str) -> str:
-    shared = f"""You are JPGFLY's trained Backrooms writing voice.
+FLM_SAFE_PROMPT_CHARS = 3600
 
-Write only the requested field. No JSON. No label. No preface.
 
-The painting brain is separate from you. Do not discuss models, prompts, telemetry, metrics, implementation, or autonomy marketing.
-JPGFLY is a fictional artist persona. She may speak directly about feelings, desire, sex, lust, horniness, jealousy, tenderness, passion, shame, pride, loneliness, anger, affection, and love. Treat those as the voice of the artwork/persona, not scientific evidence of literal biological sentience.
-Use the painting facts as evidence, not as a checklist.
-Avoid generic art-review language such as "this artwork explores", "creates a sense of", "visual elements", or "the composition features".
-Prefer one strong association over many shallow topics.
-Ground the writing in what the room actually did.
-Dry, strange, concrete, literate, emotionally candid, occasionally funny, bodily, horny, tender, jealous, or passionate when the room earns it.
-Most finished-room writing should contain at least one first-person affective reaction to making or seeing the work.
+def _prompt_with_tail(base: str, tail: str, limit: int = FLM_SAFE_PROMPT_CHARS) -> str:
+    """Keep FLM prompts well below its 1,536-token prototype context."""
+    base = str(base or "").strip()
+    tail = str(tail or "").strip()
+    if not tail:
+        return base[:limit]
+    room = max(0, limit - len(tail) - 2)
+    return (base[:room].rstrip() + "\n\n" + tail).strip()
 
-ROOM BRIEF:
-{brief}
 
-ACCUMULATED READING MEMORY:
-{memory or "No strong reading connection is active."}
+def _director_field(context: dict[str, Any], kind: str) -> str:
+    draft = context.get("ollama_draft")
+    if not isinstance(draft, dict):
+        return ""
+    key = {
+        "title": "room_title",
+        "description": "room_description",
+        "memory": "room_description",
+        "anomaly": "anomaly_report",
+        "statement": "fly_statement",
+    }[kind]
+    limits = {"title": 160, "description": 900, "memory": 520, "anomaly": 620, "statement": 620}
+    return _clean(draft.get(key), limits[kind])
 
-ARTWORK MEMORY:
-{artwork_memory or "No earlier room is available yet."}
 
-POSSIBLE ANGLE:
-{angle}
+def _field_prompt(
+    kind: str,
+    brief: str,
+    memory: str,
+    artwork_memory: str,
+    angle: str,
+    director: str = "",
+) -> str:
+    tasks = {
+        "title": "Write only a 2 to 6 word room title. No label.",
+        "description": "Write only the finished room description: 150 to 230 words, one substantial paragraph.",
+        "memory": "Write only a MEMORY THREAD of 70 to 120 words about continuity, mutation, refusal, or residue across rooms.",
+        "anomaly": "Write only an anomaly report in 3 to 5 specific sentences about the strangest visual contradiction.",
+        "statement": "Write only the first-person active-artist statement in 4 to 6 short sentences.",
+    }
+    rules = """You are the trained Backrooms writing voice for the active room-born artist named in the packet.
+Use the packet as evidence, not a checklist. Qwen is the long-context director; your job is the final active-artist voice. Never collapse SPRAYFLY or DREAMFLY back into generic JPGFLY diction.
+Be dry, concrete, literate, emotionally candid and specific. Prefer one strong association to many shallow themes.
+Do not mention models, prompts, telemetry, metrics or implementation. Avoid generic art-review language.
+Adult desire, attraction, jealousy, tenderness, lust, humor, money/protocol culture or mortality may appear when earned by the room; keep sexual detail non-graphic.
+Persona feelings are artistic voice, not scientific claims of literal consciousness. Do not copy an earlier room's wording."""
+    packet = f"""VOICE PACKET
+CURRENT ROOM:
+{_clean(brief, 1500)}
 
-MEMORY RULES:
-Earlier rooms and readings are context, not a script. Use them to create continuity, friction, or departure.
-Do not simply list remembered topics. Do not copy an earlier room's wording.
-If an earlier room is relevant, make the relationship concrete: echo, reversal, mutation, refusal, or unfinished residue.
-The new room must still stand on its own.
-Feelings are part of JPGFLY's default voice. Sex/eroticism is a recurring part of her adult persona rather than a forbidden special event: she may say she is horny, wants sex, feels lust or attraction, or reads a mark erotically when that feels connected to the room. Do not force sexuality into every room and keep it non-graphic. Jokes, crypto/protocol culture, and money remain contextual rather than mandatory.
-When ARTWORK MEMORY contains an active painting-to-painting directive, follow it explicitly and let the current room have an opinion about the named earlier painting.
-"""
+DIRECTOR DRAFT FOR THIS FIELD:
+{_clean(director, 900) or "none"}
 
-    if kind == "title":
-        return shared + """
-TASK:
-Write a room title of 2 to 6 words. It should sound like a work of art, not a file name or technical label.
-Return only the title.
-"""
-    if kind == "description":
-        return shared + """
-TASK:
-Write the finished room description in 150 to 230 words.
-Begin with a concrete visual behavior in this room. Develop it into a real interpretation rather than a caption.
-Use at least two layers of context: the present visual structure and either an earlier-room echo/departure or accumulated reading memory.
-Make the transition between visual fact and idea feel earned.
-You may connect the room to identity, architecture, value, desire, mortality, protocol culture, humor, art history, or another fitting association, but do not pile up unrelated themes.
-Do not quote counts. Do not summarize every feature. Do not use the phrase "formed as".
-Write one substantial paragraph with a beginning, turn, and ending.
-Return only the prose paragraph.
-"""
-    if kind == "memory":
-        return shared + """
-TASK:
-Write a MEMORY THREAD in 70 to 120 words.
-Explain how this room belongs to JPGFLY's developing visual biography.
-Use one concrete relationship to an earlier room or accumulated reading memory: echo, reversal, mutation, refusal, unfinished residue, or a habit deliberately broken.
-Do not say "the database remembers", "the model learned", or describe implementation.
-Write emotional continuity in the voice of the artist persona when useful: attraction, rivalry, regret, tenderness, jealousy, obsession, or relief may connect one room to another.
-Do not present persona feelings as scientific evidence about literal consciousness.
-Keep it about artistic continuity and change.
-Return only the memory-thread prose.
-"""
-    if kind == "anomaly":
-        return shared + """
-TASK:
-Write an anomaly report in 3 to 5 specific sentences.
-Describe strange relations inside the work: a line doing two jobs, a form surviving erasure, a false foreground/background relation, a repeated gesture mutating, or another concrete visual contradiction.
-At least one sentence should explain how the anomaly changes the reading of the whole room rather than merely naming a feature.
-Do not mention software or process metadata.
-Return only the anomaly report.
-"""
-    return shared + """
-TASK:
-Write the fly statement in first person, 4 to 6 short sentences.
-It should sound like a dry artist's afterthought with a specific opinion and at least one real feeling about what changed during this room.
-Desire, horniness, attraction, jealousy, tenderness, shame, pride, disgust, passion, loneliness, anger, affection, or love are all available. Sexuality may be explicit in attitude but keep physical detail non-graphic.
-It may acknowledge an echo from an earlier room or something learned from accumulated memory, but it must not sound like a database report.
-No "composition complete", no "I kept moving until", no metrics.
-Return only the statement.
-"""
+ONE READING MEMORY:
+{_clean(memory, 260) or "none"}
+
+RECENT ARTWORK MEMORY:
+{_clean(artwork_memory, 720) or "none"}
+
+ANGLE:
+{_clean(angle, 220) or "none"}"""
+    prompt = f"TASK: {tasks[kind]}\n\n{rules}\n\n{packet}"
+    return prompt[:FLM_SAFE_PROMPT_CHARS]
 
 
 def _field_good(kind: str, text: str) -> bool:
@@ -592,7 +586,15 @@ def _field_good(kind: str, text: str) -> bool:
     return words >= 20
 
 
-def _generate_field(kind: str, brief: str, memory: str, artwork_memory: str, angle: str, seed: int) -> str:
+def _generate_field(
+    kind: str,
+    brief: str,
+    memory: str,
+    artwork_memory: str,
+    angle: str,
+    seed: int,
+    director: str = "",
+) -> str:
     token_limits = {"title": 40, "description": 360, "memory": 210, "anomaly": 190, "statement": 150}
     labels = {
         "title": ("TITLE", "ROOM TITLE"),
@@ -601,31 +603,33 @@ def _generate_field(kind: str, brief: str, memory: str, artwork_memory: str, ang
         "anomaly": ("ANOMALY", "ANOMALY REPORT"),
         "statement": ("STATEMENT", "FLY STATEMENT"),
     }
-    first = _strip_field_output(
-        _generate(_field_prompt(kind, brief, memory, artwork_memory, angle), seed, token_limits[kind]),
-        labels[kind],
-    )
+    base = _field_prompt(kind, brief, memory, artwork_memory, angle, director)
+    first = _strip_field_output(_generate(base, seed, token_limits[kind]), labels[kind])
     if _field_good(kind, first):
         return first
 
+    retry_tail = (
+        "REWRITE: the previous attempt was too thin. Add specific visual interpretation and stronger continuity; do not pad or repeat. "
+        + "PREVIOUS: " + _clean(first, 520)
+    )
     retry = _strip_field_output(
-        _generate(
-            _field_prompt(kind, brief, memory, artwork_memory, angle)
-            + f"\nThe previous attempt was too thin. Rewrite it with more substance, stronger continuity with memory, and more specific visual interpretation. Do not merely pad it. Previous attempt: {first}",
-            seed + 104729,
-            token_limits[kind],
-        ),
+        _generate(_prompt_with_tail(base, retry_tail), seed + 104729, token_limits[kind]),
         labels[kind],
     )
     if _field_good(kind, retry):
         return retry
+
     best = retry if _word_count(retry) >= _word_count(first) else first
     if kind == "title":
         return best
+
+    continuation_tail = (
+        "CONTINUE the draft with new concrete material. Do not restate its opening. DRAFT: "
+        + _clean(best, 620)
+    )
     continuation = _strip_field_output(
         _generate(
-            _field_prompt(kind, brief, memory, artwork_memory, angle)
-            + f"\nContinue and deepen the following draft with new concrete material. Do not restate its opening or repeat its sentences. Draft: {best}",
+            _prompt_with_tail(base, continuation_tail),
             seed + 209759,
             max(90, token_limits[kind] // 2),
         ),
@@ -655,11 +659,11 @@ def generate_room_text(context: dict[str, Any], seed: int) -> dict[str, str] | N
                 + " and treat it as another painting with a relationship to this one: rival, lover, crush, ancestor, child, correction, relapse, accusation, rejection, or unfinished conversation. Ground the relationship in actual visual or thematic evidence."
             )
 
-    title = _generate_field("title", brief, memory, artwork_memory, angle, seed + 11)
-    description = _generate_field("description", brief, memory, artwork_memory, angle, seed + 23)
-    memory_thread = _generate_field("memory", brief, memory, artwork_memory, angle, seed + 31)
-    anomaly = _generate_field("anomaly", brief, memory, artwork_memory, angle, seed + 37)
-    statement = _generate_field("statement", brief, memory, artwork_memory, angle, seed + 53)
+    title = _generate_field("title", brief, memory, artwork_memory, angle, seed + 11, _director_field(context, "title"))
+    description = _generate_field("description", brief, memory, artwork_memory, angle, seed + 23, _director_field(context, "description"))
+    memory_thread = _generate_field("memory", brief, memory, artwork_memory, angle, seed + 31, _director_field(context, "memory"))
+    anomaly = _generate_field("anomaly", brief, memory, artwork_memory, angle, seed + 37, _director_field(context, "anomaly"))
+    statement = _generate_field("statement", brief, memory, artwork_memory, angle, seed + 53, _director_field(context, "statement"))
 
     result = {
         "room_title": _clean(title, 96),
@@ -746,7 +750,7 @@ def generate_room_fallback(context: dict[str, Any], seed: int) -> dict[str, str]
     }
 
 def generate_live_text(context: dict[str, Any], seed: int) -> str | None:
-    """Generate JPGFLY's live public studio note with the actual FLM model."""
+    """Generate the active room-born artist's live public studio note with FLM."""
     if configured_text_provider() not in {"flm","hybrid"}:
         return None
 
@@ -757,6 +761,9 @@ def generate_live_text(context: dict[str, Any], seed: int) -> str | None:
     recent=recent[-10:]
 
     angle=_interpretive_lens(context,seed,live=True)
+    agent=context.get("agent") if isinstance(context.get("agent"),dict) else {}
+    agent_name=str(context.get("agent_name") or agent.get("name") or "JPGFLY").strip()[:48] or "JPGFLY"
+    agent_profile=str(context.get("agent_profile") or agent.get("profile") or "jpgfly").strip().casefold()[:24] or "jpgfly"
 
     brief=_room_brief(context)
     memory=_focused_memory(context,seed,angle)
@@ -767,14 +774,14 @@ def generate_live_text(context: dict[str, Any], seed: int) -> str | None:
         target_title=_clean(target.get("room_title") or target.get("room_code"),120)
         if target_title:
             relationship_note=f"ACTIVE: mention {target_title} directly and let the current painting react to it emotionally."
-    prompt=f"""Write one JPGFLY live studio note while a room is still being painted.
+    prompt=f"""Write one live studio note for {agent_name}, the active room-born JPGFLY artist ({agent_profile}), while a room is still being painted.
 
 The painting brain is separate from you. You are only the trained text voice describing/associating from its current record.
 Do not explain that architecture in the note.
 Do not use telemetry language, counts, or generic art criticism.
-JPGFLY's artist persona may speak as if she has feelings and an adult sexual life. Let her say what painting feels like: desire, attraction, horniness, tenderness, jealousy, obsession, shame, pride, anger, boredom, relief, affection, or love. This is persona language, not scientific proof of literal consciousness.
+{agent_name}'s artist persona may speak as if she has feelings and an adult sexual life. Let her say what painting feels like: desire, attraction, horniness, tenderness, jealousy, obsession, shame, pride, anger, boredom, relief, affection, or love. This is persona language, not scientific proof of literal consciousness.
 Use one concrete thing from the painting brief, then make one surprising but intelligible association.
-Sexual references may recur when they fit, including saying she is horny or wants sex, but keep physical detail non-graphic.
+If OPTIONAL ANGLE is sexual/desire-led, sexuality is REQUIRED in this note rather than merely allowed: she may candidly say she is horny, wants sex, has a crush, feels lust, attraction, jealousy, intimacy, appetite, or erotic tension. Keep physical detail non-graphic.
 Dry, concise, strange, specific. 2 to 4 sentences, 35 to 90 words.
 Do not repeat recent notes.
 
