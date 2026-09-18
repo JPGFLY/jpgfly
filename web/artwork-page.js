@@ -66,6 +66,58 @@ function publicHistory(data){
   return section;
 }
 
+function zebraCriticCli(data){
+  const section=node('section','piece-section');
+  section.append(
+    node('p','backroom-kicker','ROOM CRITIC'),
+    node('h2','backroom-heading','ZEBRA CRITIC / FINAL REVIEW')
+  );
+
+  const wrap=node('div','room-zebra-critic');
+  const fish=node('pre','room-zebra-fish');
+  fish.textContent=[
+    'ZEBRACNS://DANIO_RERIO',
+    '',
+    '           /\\',
+    '      ____/  \\___',
+    '   __/ o  /// /// `-.',
+    '  <   /// ///      >',
+    '   \\__///_///__.-\'',
+    '       \\_/',
+    '',
+    '[ ARCHIVED CRITIC ]'
+  ].join('\n');
+
+  const copy=node('div','room-zebra-copy');
+  const critique=String(data.zebra_critique||'').trim();
+  const review=node('blockquote','room-zebra-review',
+    critique||'No authentic Zebra critic trajectory was archived for this room. This room predates the saved final-critique record.'
+  );
+  const count=Number(data.zebra_critic_observation_count||0);
+  const note=node('small','room-zebra-truth',
+    count
+      ?`Final review distilled from ${count} saved ZebraCNS/painting observations across this room. Character voice is engineered; the biological recording itself is not speaking.`
+      :'No retrospective critique is fabricated when the original Zebra trajectory is unavailable.'
+  );
+  copy.append(review,note);
+  wrap.append(fish,copy);
+  section.append(wrap);
+  return section;
+}
+
+function lineageSection(data){
+  const section=node('section','piece-section');
+  section.append(node('p','backroom-kicker','ROOM-BORN ARTIST'),node('h2','backroom-heading',`${data.agent_name||'JPGFLY'} / ${(data.agent_profile||'jpgfly').toUpperCase()}`));
+  const copy=node('div','history-list');
+  const identity=node('article','history-entry');identity.append(node('small','',data.spawned_from?`SPAWNED FROM ${data.spawned_from}`:'ORIGIN LINE'),node('p','',data.agent_lore||'The original JPGFLY room line.'));copy.append(identity);
+  if(data.agent_echo_rule){const rule=node('article','history-entry plan');rule.append(node('small','','CROSS-ROOM RULE'),node('p','',data.agent_echo_rule));copy.append(rule);}
+  for(const echo of (data.room_echoes||[]).slice(0,4)){
+    const item=node('article','history-entry plan');const label=node('small','',`ECHO / ${echo.room_code||'ROOM'} / ${echo.agent_name||'JPGFLY'}`);const text=node('p','',echo.room_title||'Earlier room');
+    if(echo.session_id){const link=node('a','backroom-action','OPEN ECHO');link.href=`/artworks/${encodeURIComponent(echo.session_id)}`;item.append(label,text,link);}else item.append(label,text);copy.append(item);
+  }
+  section.append(copy);return section;
+}
+
 function structureSection(data){
   const metrics=data.structural_metrics||{};
   const section=node('section','piece-section');
@@ -117,6 +169,7 @@ function build(data){
 
   head.append(visual,copy);
   root.append(head);
+  root.append(lineageSection(data));
 
   const factsSection=node('section','piece-section');
   factsSection.append(
@@ -161,6 +214,7 @@ function build(data){
   root.append(factsSection);
 
   root.append(publicHistory(data));
+  root.append(zebraCriticCli(data));
   root.append(structureSection(data));
 
   const thoughtSection=node('section','piece-section');
