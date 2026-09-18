@@ -306,6 +306,9 @@ def record_room_experience(record: dict[str, Any]) -> dict[str, Any]:
         room_note = {
             "room_code": room_code,
             "room_title": record.get("room_title"),
+            "agent_profile": str(record.get("agent_profile") or "jpgfly"),
+            "agent_name": str(record.get("agent_name") or "JPGFLY"),
+            "spawned_from": record.get("spawned_from"),
             "motifs": Counter(a.get("motifHint") for a in actions if a.get("motifHint") not in (None, "NONE")).most_common(6),
             "palette": Counter(a.get("paletteName") for a in actions if a.get("paletteName")).most_common(2) if actions else ([(context.get("palette_name"), 1)] if context.get("palette_name") else []),
             "composition": Counter(a.get("compositionMode") for a in actions if a.get("compositionMode")).most_common(2) if actions else ([(context.get("composition_mode"), 1)] if context.get("composition_mode") else []),
@@ -322,6 +325,8 @@ def record_room_experience(record: dict[str, Any]) -> dict[str, Any]:
             "duration_profile": context.get("duration_profile"),
             "tempo_mode": context.get("tempo_mode"),
             "content_register": context.get("content_register"),
+            "artistic_temperament": context.get("artistic_temperament"),
+            "art_policy": context.get("art_policy"),
             "topics": list(_topic_counts(lore).most_common(6)),
             "completed_at": record.get("completed_at"),
         }
@@ -418,6 +423,9 @@ def visual_bias() -> dict[str, Any]:
     for item in (data.get("recent_rooms") or [])[-8:]:
         recent.append({
             "room_code": item.get("room_code"),
+            "agent_profile": item.get("agent_profile") or "jpgfly",
+            "agent_name": item.get("agent_name") or "JPGFLY",
+            "spawned_from": item.get("spawned_from"),
             "palette": (item.get("palette") or [])[:2],
             "composition": (item.get("composition") or [])[:2],
             "styles": (item.get("styles") or [])[:5],
@@ -433,6 +441,7 @@ def visual_bias() -> dict[str, Any]:
             "duration_profile": item.get("duration_profile"),
             "tempo_mode": item.get("tempo_mode"),
             "content_register": item.get("content_register"),
+            "artistic_temperament": item.get("artistic_temperament"),
         })
     return {
         "rooms_seen": rooms,
