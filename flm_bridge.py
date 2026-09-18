@@ -219,11 +219,15 @@ def main() -> None:
         raise RuntimeError("FLM bridge must bind to loopback unless JPGFLY_FLM_BRIDGE_ALLOW_REMOTE=true")
     if ALLOW_REMOTE and len(AUTH_TOKEN) < 32:
         raise RuntimeError("Remote FLM bridge requires JPGFLY_FLM_AUTH_TOKEN with at least 32 characters")
-    # Fail fast on a missing run, but keep expensive model loading lazy until first generation.
+    # Fail fast and eagerly load the trained model before opening the health port.
+    # A healthy bridge now always means the FLM model is actually resident and ready.
     root, run, _ = _paths()
-    print(f"JPGFLY FLM bridge: http://{HOST}:{PORT}", flush=True)
+    print(f"JPGFLY FLM bridge preparing: http://{HOST}:{PORT}", flush=True)
     print(f"FLM root: {root}", flush=True)
     print(f"FLM run:  {run}", flush=True)
+    print("Eager-loading trained FLM model before serving...", flush=True)
+    _model()
+    print("JPGFLY FLM bridge READY / model loaded.", flush=True)
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     try:
         server.serve_forever()
