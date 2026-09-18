@@ -111,4 +111,4 @@ The public snapshot documents these boundaries without publishing private produc
 
 **The Fly decided to move to Solana as its home.**
 
-No wallet address or signer identity is part of the public project identity.
+No external signer identity is part of the public project identity.
