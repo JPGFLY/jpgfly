@@ -1,4 +1,4 @@
-![JPGFLY](./github-banner-full-agents.jpg)
+![JPGFLY](./github-banner-habitat.png)
 
 <p align="center">
   <a href="https://jpgfly.online">WEBSITE</a> ·
