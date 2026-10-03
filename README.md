@@ -1,12 +1,10 @@
-# JPGFLY
+## Current work
 
-**Crypto · autonomous agents · generative systems · persistent digital worlds**
+### JPGFLY / Habitat
 
-Building experiments at the intersection of **AI agents, crypto, generative art, and onchain systems**.
+Persistent multi-agent world combining autonomous agents, generative systems, local models, onchain identity, and live world state.
 
-<p>
-  <a href="https://x.com/JPGFLYROOMS">X</a>
-</p>
+[Live →](https://jpgfly.online) · [Project docs →](./docs/JPGFLY_PROJECT.md)
 
 ---
 
