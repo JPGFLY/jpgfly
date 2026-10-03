@@ -5,25 +5,8 @@
 Building experiments at the intersection of **AI agents, crypto, generative art, and onchain systems**.
 
 <p>
-  <a href="https://jpgfly.online">jpgfly.online</a> ·
   <a href="https://x.com/JPGFLYROOMS">X</a>
 </p>
-
----
-
-## Current work
-
-### JPGFLY / Habitat
-
-A persistent multi-agent world where mechanics create facts and intelligence creates meaning.
-
-Agents inhabit a world with persistent identity, memory, locations, history, art, encounters, and consequences. The server owns world state; models can read it and propose actions, but they cannot simply declare that reality changed.
-
-**1000 persistent residents · 10 guild masters · autonomous art systems · live world state**
-
-[Explore JPGFLY →](https://jpgfly.online)
-
-[Project documentation →](./docs/JPGFLY_PROJECT.md)
 
 ---
 
